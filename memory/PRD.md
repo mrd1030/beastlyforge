@@ -20,13 +20,28 @@ Stack: React 18 + TypeScript, Tailwind + shadcn/ui, Framer Motion, @hello-pangea
 - Versions: auto-snapshot on full generation + restore
 - DnD: palette → canvas, canvas reorder, newsletter previews reorder
 
+## Implemented (Jun 2026 — feature + fix batch, all tested)
+- **Fixed critical typing bug**: left sidebar inputs lost focus after one keystroke (the collapsible `Sec` was defined inline in Composer's render → remount each keystroke). Extracted a stable `components/composer/BriefSidebar.tsx` with module-level `Sec`.
+- **New Article confirmation modal**: clicking New Article / dashboard / drafts "New" no longer auto-creates a draft; shows an AlertDialog (Yes/Cancel). All "new" entry points route to `/new`; Composer shows the confirm. Fixed nav race with a `confirmedRef` guard in `onOpenChange`.
+- **XSS fix**: Finalize now sanitizes rendered markdown with `DOMPurify.sanitize` (via `useMemo`, hooks-order safe). Markdown rendering upgraded to `marked` (GFM).
+- **Mobile phone preview scroll fix**: inner `phone-scroll` wrapper inside `.phone-screen` (which keeps `overflow:hidden` for rounded clipping).
+- **Facts to use** brief field (`brief.factsToUse`) — authoritative source-of-truth fed to the LLM. Backend `build_system_prompt` adds strong anti-hallucination rules (no invented stats/studies/medical claims; recommend vet; never fabricate sources; prefer lived practical advice).
+- **AI SEO generation**: new `POST /api/generate/seo` returns `{focusKeyword, metaDescription}`; "AI Generate keyword + description" button in SEO sidebar section.
+- **Custom Writing Styles + Settings page** (`/settings`): CRUD for custom styles (name/tagline/vibe/systemPrompt), defaults (default style, default categories, default affiliate). Custom styles appear in Style Library + Composer style picker, and their systemPrompt is passed to generation as `styleInstructions` (backend `build_system_prompt` + `/humanize` honor it). `StyleId` relaxed to `string`; `lib/styles.ts` helpers (`getAllStyles`, `getStyleById`, `getStyleInstructions`).
+- **Dedicated Newsletter page** (`/newsletter`, own nav item): standalone newsletter persisted at `bf.newsletter.v1`. Pull articles from My Drafts as the main Featured article or as multiple preview cards; drag-and-drop reorder; edit Title/Summary/Image Prompt/Alt/CTA text+link; export HTML / Markdown / Plain (beehiiv/Substack paste).
+- Hardened LLM JSON fallback parsing (try/except) on newsletter-preview/social/layout-suggest.
+
+## Tested
+- iteration_2.json: backend 17/17 pytest; frontend all flows (typing fix, SEO AI, custom style, newsletter) — only the confirm-modal nav bug, now fixed.
+- iteration_3.json: confirm-modal navigation retest 2/2 PASS.
+
 ## Backlog (P1+)
 - Per-block streaming generation
-- Optional Anthropic / xAI direct key swap UI
-- Markdown rendering library (currently small in-house renderer)
+- Bring-your-own Anthropic / xAI (Grok) key (Settings UI placeholder exists; needs integration + secure storage)
 - Image upload (object storage) for header image
 - Multi-device sync (Firebase / Mongo backend)
-- Export presets per platform (beehiiv / Substack ready snippets)
+- "Send a test email" newsletter preview to a real inbox
+- Debounce Composer localStorage persistence; forward max_tokens in llm_complete
 
 ## Notes
 - Buttons updated to use `forwardRef(function name(props, ref) { ... })` indirection to avoid React 19 + JS TS-inference issues.
