@@ -5,6 +5,7 @@ import { GripVertical, Plus, Trash2, Sparkles, Image as ImageIcon, Wand2 } from 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import { BLOCK_LIBRARY } from "@/lib/templates";
 import { uid } from "@/lib/storage";
@@ -69,9 +70,35 @@ export default function LayoutBuilder({ draft, setDraft, seedStarter }: Props) {
   };
 
   const removeBlock = (id: string) => setBlocks(draft.blocks.filter(b => b.id !== id));
-  const updateBlock = (id: string, patch: Partial<Block>) =>
-    setBlocks(draft.blocks.map(b => b.id === id ? { ...b, ...patch } : b));
+const updateBlock = (id: string, patch: Partial<Block>) => {
+  setDraft(prev => {
+    if (!prev) return prev;
 
+    // Update the blocks
+    const updatedBlocks = prev.blocks.map(b =>
+      b.id === id ? { ...b, ...patch } : b
+    );
+
+    // If this is the affiliate block and we're changing its content,
+    // also sync it back to draft.affiliate.text
+    const updatedBlock = updatedBlocks.find(b => b.id === id);
+    const syncingAffiliateText =
+      updatedBlock?.type === "affiliate" && patch.content !== undefined;
+
+    return {
+      ...prev,
+      blocks: updatedBlocks,
+      ...(syncingAffiliateText
+        ? {
+            affiliate: {
+              ...prev.affiliate,
+              text: patch.content as string,
+            },
+          }
+        : {}),
+    };
+  });
+};
   const onAutoSuggest = async () => {
     if (!draft.brief.topic) { toast.error("Add a topic first"); return; }
     setBusy(true);
@@ -205,12 +232,34 @@ export default function LayoutBuilder({ draft, setDraft, seedStarter }: Props) {
                           </div>
                         </div>
                         <div className="p-3 space-y-2">
-                          <div>
-                            <Label className="text-[10px] uppercase tracking-wider text-muted-foreground">Block note (guidance for AI)</Label>
-                            <Input value={b.note || ""} onChange={e => updateBlock(b.id, { note: e.target.value })}
-                              placeholder={"e.g. focus on first 24 hours, mention vet visit"}
-                              data-testid={`block-note-${b.id}-input`} />
-                          </div>
+  {/* Note field (shown for all blocks) */}
+  <div>
+    <Label className="text-[10px] uppercase tracking-wider text-muted-foreground">
+      Block note (guidance for AI)
+    </Label>
+    <Input
+      value={b.note || ""}
+      onChange={e => updateBlock(b.id, { note: e.target.value })}
+      placeholder="e.g. focus on first 24 hours..."
+      data-testid={`block-note-${b.id}-input`}
+    />
+  </div>
+
+  {/* Editable Disclosure Text - only shown for affiliate blocks */}
+  {b.type === "affiliate" && (
+    <div>
+      <Label className="text-[10px] uppercase tracking-wider text-muted-foreground">
+        Disclosure Text
+      </Label>
+      <Textarea
+        rows={4}
+        value={b.content || ""}
+        onChange={e => updateBlock(b.id, { content: e.target.value })}
+        placeholder="Heads up — some links are affiliate links..."
+        data-testid={`block-content-${b.id}-input`}
+      />
+    </div>
+  )}
                           {b.type === "image" && (b.imagePrompt || b.imageAlt) && (
                             <div className="bg-muted/40 rounded-lg p-2 text-xs space-y-1">
                               <div><span className="font-semibold">Prompt:</span> {b.imagePrompt}</div>

@@ -20,9 +20,33 @@ export default function EditPreview({ draft, setDraft }: Props) {
   const [busy, setBusy] = useState(false);
   const [blockBusy, setBlockBusy] = useState<string>("");
 
-  const updateBlock = (id: string, patch: Partial<Block>) =>
-    setDraft(p => p ? { ...p, blocks: p.blocks.map(b => b.id === id ? { ...b, ...patch } : b) } : p);
+const updateBlock = (id: string, patch: Partial<Block>) => {
+  setDraft(prev => {
+    if (!prev) return prev;
 
+    const updatedBlocks = prev.blocks.map(b =>
+      b.id === id ? { ...b, ...patch } : b
+    );
+
+    // Bidirectional sync for affiliate blocks
+    const updatedBlock = updatedBlocks.find(b => b.id === id);
+    const isAffiliate = updatedBlock?.type === "affiliate";
+    const isContentChange = patch.content !== undefined;
+
+    return {
+      ...prev,
+      blocks: updatedBlocks,
+      ...(isAffiliate && isContentChange
+        ? {
+            affiliate: {
+              ...prev.affiliate,
+              text: patch.content as string,
+            },
+          }
+        : {}),
+    };
+  });
+};
   const snapshotVersion = (label: string) => {
     setDraft(p => p ? {
       ...p,

@@ -68,6 +68,7 @@ export interface HeaderImage {
 export interface AffiliateConfig {
   enabled: boolean;
   placement: "after-title" | "bottom-section" | "manual";
+  type: "amazon" | "chewy" | "other";
   text: string;
 }
 

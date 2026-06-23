@@ -8,11 +8,11 @@ import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Sparkles, X, Plus, Image as ImageIcon, ChevronDown, ChevronRight } from "lucide-react";
-import { CATEGORIES, PLACEMENT_OPTIONS } from "@/lib/templates";
+import { CATEGORIES, PLACEMENT_OPTIONS, TYPE_OPTIONS, getAffiliateDisclosureText } from "@/lib/templates";
 import { getAllStyles, getStyleInstructions } from "@/lib/styles";
-import { loadCustomCategories, saveCustomCategories } from "@/lib/storage";
+import { loadCustomCategories, saveCustomCategories, uid } from "@/lib/storage";
 import { generateImagePrompt, generateMeta, generateSeo } from "@/lib/api";
-import type { Draft, StyleId } from "@/types";
+import type { Draft, StyleId, Block } from "@/types";
 
 interface Props {
   draft: Draft;
@@ -54,6 +54,50 @@ export default function BriefSidebar({ draft, setDraft, leftOpen, setLeftOpen, o
   const update = (patch: Partial<Draft>) => setDraft(prev => prev ? { ...prev, ...patch } : prev);
   const updateBrief = (patch: Partial<Draft["brief"]>) => setDraft(prev => prev ? { ...prev, brief: { ...prev.brief, ...patch } } : prev);
   const updateAffiliate = (patch: Partial<Draft["affiliate"]>) => setDraft(prev => prev ? { ...prev, affiliate: { ...prev.affiliate, ...patch } } : prev);
+  const updateBlock = (id: string, patch: Partial<Block>) => {
+  setDraft(prev => {
+    if (!prev) return prev;
+    return {
+      ...prev,
+      blocks: prev.blocks.map(b =>
+        b.id === id ? { ...b, ...patch } : b
+      )
+    };
+  });
+};
+  const setAffiliateEnabled = (enabled: boolean) => {
+  updateAffiliate({ enabled });
+
+  if (!enabled && draft) {
+    // Remove affiliate block when turned off
+    const filteredBlocks = draft.blocks.filter((b: Block) => b.type !== "affiliate");
+
+    if (filteredBlocks.length !== draft.blocks.length) {
+      setDraft(prev => prev ? { ...prev, blocks: filteredBlocks } : prev);
+    }
+  }
+
+  if (enabled && draft) {
+    // Add affiliate block when turned on (if it doesn't exist)
+    const hasAffiliateBlock = draft.blocks.some((b: Block) => b.type === "affiliate");
+
+    if (!hasAffiliateBlock) {
+      const newAffiliateBlock: Block = {
+        id: uid("blk"),
+        type: "affiliate",
+        label: "Affiliate Disclosure",
+        note: "",
+        content: draft.affiliate.text || 
+          "Heads up — some links are affiliate links. If you buy something through them, I may earn a small commission at no extra cost to you.",
+      };
+
+      setDraft(prev => prev ? {
+        ...prev,
+        blocks: [...prev.blocks, newAffiliateBlock]
+      } : prev);
+    }
+  }
+};
   const updateHeader = (patch: Partial<Draft["headerImage"]>) => setDraft(prev => prev ? { ...prev, headerImage: { ...prev.headerImage, ...patch } } : prev);
 
   const toggleCategory = (c: string) => {
@@ -295,8 +339,12 @@ export default function BriefSidebar({ draft, setDraft, leftOpen, setLeftOpen, o
         <Sec open={openSection === "affiliate"} onToggle={() => toggle("affiliate")} k="affiliate" title="Affiliate Disclosure">
           <div className="flex items-center justify-between">
             <Label htmlFor="aff">Include disclosure</Label>
-            <Switch id="aff" checked={draft.affiliate.enabled} onCheckedChange={v => updateAffiliate({ enabled: v })} data-testid="affiliate-enabled-switch" />
-          </div>
+<Switch
+  id="aff"
+  checked={draft.affiliate.enabled}
+  onCheckedChange={setAffiliateEnabled}
+  data-testid="affiliate-enabled-switch"
+/>          </div>
           {draft.affiliate.enabled && (
             <>
               <div>
@@ -308,10 +356,50 @@ export default function BriefSidebar({ draft, setDraft, leftOpen, setLeftOpen, o
                   </SelectContent>
                 </Select>
               </div>
+<div>
+  <Label>Affiliate Type</Label>
+  <Select 
+    value={draft.affiliate.type} 
+    onValueChange={(v: "amazon" | "chewy" | "other") => {
+      const newText = getAffiliateDisclosureText(v);
+      updateAffiliate({ type: v, text: newText });
+      
+      // Also update the block content if it exists
+      const affiliateBlock = draft.blocks.find(b => b.type === "affiliate");
+      if (affiliateBlock) {
+        updateBlock(affiliateBlock.id, { content: newText });
+      }
+    }}
+  >
+    <SelectTrigger data-testid="affiliate-type-select">
+      <SelectValue />
+    </SelectTrigger>
+    <SelectContent>
+      {TYPE_OPTIONS.map(o => (
+        <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+      ))}
+    </SelectContent>
+  </Select>
+</div>
               <div>
                 <Label>Disclosure Text</Label>
-                <Textarea rows={4} value={draft.affiliate.text} onChange={e => updateAffiliate({ text: e.target.value })} data-testid="affiliate-text-input" />
-              </div>
+<Textarea
+  rows={4}
+  value={draft.affiliate.text}
+  onChange={e => {
+    const newText = e.target.value;
+
+    // Update the affiliate config
+    updateAffiliate({ text: newText });
+
+    // Also update the block content if it exists
+    const affiliateBlock = draft.blocks.find(b => b.type === "affiliate");
+    if (affiliateBlock) {
+      updateBlock(affiliateBlock.id, { content: newText });
+    }
+  }}
+  data-testid="affiliate-text-input"
+/>              </div>
             </>
           )}
         </Sec>

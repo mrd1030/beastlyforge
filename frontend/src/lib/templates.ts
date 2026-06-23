@@ -1,4 +1,6 @@
-import type { StyleId, BlockType } from "@/types";
+import type { StyleId, BlockType, Block } from "@/types";
+
+
 
 export const WRITING_STYLES: { id: StyleId; name: string; tagline: string; vibe: string }[] = [
   { id: "real-person", name: "Real Person — Lived It", tagline: "First-hand, honest, lived experience.", vibe: "Like a friend who actually went through it." },
@@ -50,3 +52,21 @@ export const PLACEMENT_OPTIONS = [
   { value: "bottom-section", label: "Dedicated section near bottom" },
   { value: "manual", label: "Manual placement" },
 ] as const;
+
+export const TYPE_OPTIONS = [
+  { value: "amazon", label: "Amazon" },
+  { value: "chewy", label: "Chewy" },
+  { value: "other", label: "Other / General" },
+] as const;
+
+export const getAffiliateDisclosureText = (type: "amazon" | "chewy" | "other"): string => {
+  switch (type) {
+    case "amazon":
+      return "Heads up — some links are Amazon affiliate links. If you buy something through them, I may earn a small commission at no extra cost to you.";
+    case "chewy":
+      return "Heads up — some links are Chewy affiliate links. If you buy something through them, I may earn a small commission at no extra cost to you.";
+    case "other":
+    default:
+      return "Heads up — some links are affiliate links. If you buy something through them, I may earn a small commission at no extra cost to you.";
+  }
+};

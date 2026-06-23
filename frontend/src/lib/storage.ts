@@ -132,7 +132,7 @@ export function deleteCustomStyle(id: string) {
 
 // ---- App settings ----
 export function defaultSettings(): AppSettings {
-  return { defaultStyleId: "real-person", defaultCategories: [], defaultAffiliateEnabled: true };
+  return { defaultStyleId: "real-person", defaultCategories: [], defaultAffiliateEnabled: false };
 }
 export function loadSettings(): AppSettings {
   try {
