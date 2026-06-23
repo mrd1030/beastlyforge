@@ -1,0 +1,170 @@
+import { useState } from "react";
+import { motion } from "framer-motion";
+import { toast } from "sonner";
+import { Sparkles, RefreshCw, Wand2, Loader2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
+import { generateArticle, generateBlock, humanize } from "@/lib/api";
+import { buildLlmPrompt } from "@/lib/exports";
+import { uid } from "@/lib/storage";
+import { DEFAULT_AFFILIATE_TEXT } from "@/lib/templates";
+import type { Draft, Block } from "@/types";
+
+interface Props {
+  draft: Draft;
+  setDraft: React.Dispatch<React.SetStateAction<Draft | null>>;
+}
+
+export default function EditPreview({ draft, setDraft }: Props) {
+  const [busy, setBusy] = useState(false);
+  const [blockBusy, setBlockBusy] = useState<string>("");
+
+  const updateBlock = (id: string, patch: Partial<Block>) =>
+    setDraft(p => p ? { ...p, blocks: p.blocks.map(b => b.id === id ? { ...b, ...patch } : b) } : p);
+
+  const snapshotVersion = (label: string) => {
+    setDraft(p => p ? {
+      ...p,
+      versions: [{ id: uid("v"), ts: Date.now(), label, blocks: JSON.parse(JSON.stringify(p.blocks)) }, ...p.versions].slice(0, 12),
+    } : p);
+  };
+
+  const onGenerateAll = async () => {
+    if (draft.blocks.length === 0) { toast.error("Add some blocks first"); return; }
+    setBusy(true);
+    const t = toast.loading("Writing your article — this can take a moment…");
+    try {
+      // Ensure affiliate block is present per placement
+      let blocks = [...draft.blocks];
+      if (draft.affiliate.enabled) {
+        const hasAff = blocks.some(b => b.type === "affiliate");
+        if (!hasAff) {
+          const aff: Block = { id: uid("blk"), type: "affiliate", label: "Affiliate Note", content: draft.affiliate.text };
+          if (draft.affiliate.placement === "after-title") {
+            const idx = blocks.findIndex(b => b.type === "title");
+            blocks.splice(idx >= 0 ? idx + 1 : 0, 0, aff);
+          } else if (draft.affiliate.placement === "bottom-section") {
+            blocks.push(aff);
+          }
+        }
+      }
+
+      const r = await generateArticle({
+        styleId: draft.styleId,
+        brief: draft.brief,
+        blocks: blocks.map(b => ({ id: b.id, type: b.type, note: b.note || "" })),
+      });
+      const updated = blocks.map(b => ({
+        ...b,
+        content: r.results[b.id] ?? b.content ?? (b.type === "affiliate" ? draft.affiliate.text : ""),
+      }));
+      snapshotVersion("Full generation");
+      setDraft(p => p ? { ...p, blocks: updated, llmPrompt: buildLlmPrompt({ ...p, blocks: updated }, draft.styleId) } : p);
+      toast.success("Article generated", { id: t, description: `${updated.length} blocks written in your chosen voice.` });
+    } catch (e: any) {
+      toast.error("Generation failed", { id: t, description: e?.message || "Try again." });
+    } finally { setBusy(false); }
+  };
+
+  const onRegenBlock = async (b: Block) => {
+    setBlockBusy(b.id);
+    const t = toast.loading(`Regenerating ${b.label || b.type}…`);
+    try {
+      const r = await generateBlock({ styleId: draft.styleId, brief: draft.brief, blockType: b.type, blockNote: b.note });
+      updateBlock(b.id, { content: r.text });
+      toast.success("Regenerated", { id: t });
+    } catch (e: any) { toast.error("Failed", { id: t, description: e?.message }); }
+    finally { setBlockBusy(""); }
+  };
+
+  const onHumanizeBlock = async (b: Block) => {
+    if (!b.content) { toast.message("Nothing to humanize yet"); return; }
+    setBlockBusy(b.id);
+    const t = toast.loading("Polishing voice…");
+    try {
+      const r = await humanize(b.content, draft.styleId);
+      updateBlock(b.id, { content: r.text });
+      toast.success("Voice polished", { id: t });
+    } catch (e: any) { toast.error("Failed", { id: t, description: e?.message }); }
+    finally { setBlockBusy(""); }
+  };
+
+  const onHumanizeAll = async () => {
+    setBusy(true);
+    const t = toast.loading("Polishing the whole article…");
+    try {
+      for (const b of draft.blocks) {
+        if (!b.content) continue;
+        const r = await humanize(b.content, draft.styleId);
+        updateBlock(b.id, { content: r.text });
+      }
+      snapshotVersion("Humanizer polish");
+      toast.success("Polished", { id: t, description: "Sounds more like you now." });
+    } catch (e: any) { toast.error("Failed", { id: t, description: e?.message }); }
+    finally { setBusy(false); }
+  };
+
+  if (draft.blocks.length === 0) {
+    return (
+      <div className="text-center py-16 border border-dashed border-border rounded-xl text-muted-foreground" data-testid="edit-empty-state">
+        <div className="font-display text-xl mb-2">No blocks yet</div>
+        <p className="text-sm">Switch to the <strong>Layout Builder</strong> tab and start dragging blocks.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center gap-2 justify-between bg-muted/30 border border-border rounded-xl px-4 py-3">
+        <div>
+          <div className="font-display text-lg">Generate &amp; Edit</div>
+          <p className="text-xs text-muted-foreground">Generate all blocks, then refine each in your voice.</p>
+        </div>
+        <div className="flex gap-2 flex-wrap">
+          <Button onClick={onGenerateAll} disabled={busy} size="sm"
+            className="bg-primary hover:bg-primary/90 text-primary-foreground"
+            data-testid="generate-all-btn">
+            {busy ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <Sparkles className="w-4 h-4 mr-1.5" />}
+            Generate Article Content
+          </Button>
+          <Button onClick={onHumanizeAll} disabled={busy} size="sm" variant="outline" data-testid="polish-all-btn">
+            <Wand2 className="w-4 h-4 mr-1.5" /> Polish Entire Article
+          </Button>
+        </div>
+      </div>
+
+      {draft.blocks.map((b, i) => (
+        <motion.div key={b.id} layout
+          initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2, delay: i * 0.02 }}
+          className="rounded-xl border border-border bg-card" data-testid={`edit-block-${b.id}`}>
+          <div className="flex items-center justify-between px-4 py-2.5 border-b border-border/60">
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] uppercase tracking-wider font-medium text-primary">{b.label || b.type}</span>
+              <span className="text-xs text-muted-foreground">#{i + 1}</span>
+            </div>
+            <div className="flex gap-1">
+              <Button size="sm" variant="ghost" className="h-7 px-2 text-xs"
+                disabled={!!blockBusy} onClick={() => onRegenBlock(b)}
+                data-testid={`regen-block-${b.id}-btn`}>
+                {blockBusy === b.id ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1" /> : <RefreshCw className="w-3.5 h-3.5 mr-1" />}
+                Regenerate
+              </Button>
+              <Button size="sm" variant="ghost" className="h-7 px-2 text-xs"
+                disabled={!!blockBusy} onClick={() => onHumanizeBlock(b)}
+                data-testid={`humanize-block-${b.id}-btn`}>
+                <Wand2 className="w-3.5 h-3.5 mr-1" /> Humanize
+              </Button>
+            </div>
+          </div>
+          <div className="p-4">
+            <Textarea rows={Math.min(14, Math.max(3, (b.content || "").split("\n").length + 1))}
+              value={b.content || ""} onChange={e => updateBlock(b.id, { content: e.target.value })}
+              placeholder={`${b.label} content will appear here after generation…`}
+              data-testid={`edit-textarea-${b.id}`}
+              className="font-mono text-sm leading-relaxed" />
+          </div>
+        </motion.div>
+      ))}
+    </div>
+  );
+}

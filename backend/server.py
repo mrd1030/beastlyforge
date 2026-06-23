@@ -1,72 +1,389 @@
-from fastapi import FastAPI, APIRouter
+from fastapi import FastAPI, APIRouter, HTTPException
+from fastapi.responses import StreamingResponse
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 import os
 import logging
+import json
 from pathlib import Path
-from pydantic import BaseModel, Field, ConfigDict
-from typing import List
+from pydantic import BaseModel, Field
+from typing import Optional, List, Dict, Any
 import uuid
 from datetime import datetime, timezone
 
+from emergentintegrations.llm.chat import LlmChat, UserMessage, TextDelta, StreamDone
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
-# MongoDB connection
+# MongoDB
 mongo_url = os.environ['MONGO_URL']
 client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ['DB_NAME']]
 
-# Create the main app without a prefix
-app = FastAPI()
+EMERGENT_LLM_KEY = os.environ.get('EMERGENT_LLM_KEY', '')
+DEFAULT_MODEL = ("anthropic", "claude-sonnet-4-5-20250929")
 
-# Create a router with the /api prefix
+app = FastAPI(title="BeastlyForge API")
 api_router = APIRouter(prefix="/api")
 
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
-# Define Models
-class StatusCheck(BaseModel):
-    model_config = ConfigDict(extra="ignore")  # Ignore MongoDB's _id field
-    
-    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    client_name: str
-    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
-class StatusCheckCreate(BaseModel):
-    client_name: str
+# ============ STYLE PROMPTS ============
+STYLE_SYSTEM_PROMPTS = {
+    "real-person": (
+        "You are a real pet owner who has lived through the topic firsthand. "
+        "Write in warm, honest first-person voice. Share what you actually did, "
+        "what worked, what didn't. Use natural conversational sentences, occasional "
+        "fragments, gentle humor. Never sound corporate or AI-generated. Avoid hedging "
+        "filler like 'it's important to note'. Speak directly to one reader who cares about their pet."
+    ),
+    "experienced-caregiver": (
+        "You are a long-time animal caregiver (rescue, sanctuary, vet tech) sharing "
+        "practical know-how. Tone is grounded, patient, and confident — like a wise "
+        "friend who's seen a lot. Reference real situations, give clear actionable steps."
+    ),
+    "direct-no-bs": (
+        "You are direct, practical, and unfiltered. No fluff, no padding. Get to the point. "
+        "Use short paragraphs, plain words, and clear instructions. Tell readers what to do "
+        "and why — skip the throat-clearing. Still warm, but no nonsense."
+    ),
+    "storyteller": (
+        "You are a heart-centered storyteller. Open with a small scene or a real moment. "
+        "Weave information into narrative. Use sensory detail sparingly but vividly. "
+        "Make the reader feel like they're sitting beside you on the porch."
+    ),
+    "professional-educator": (
+        "You are a knowledgeable but approachable educator. Explain things clearly with "
+        "structure. Use accurate terminology but always define it. Tone is friendly, "
+        "patient, and trustworthy — never condescending."
+    ),
+    "newsletter": (
+        "You are writing a friendly pet-care newsletter. Tone is scannable, warm, conversational, "
+        "with short paragraphs and clear calls to action. Use light formatting cues, friendly "
+        "subject-line energy in headers, and keep readers feeling welcomed not sold-to."
+    ),
+}
 
-# Add your routes to the router instead of directly to app
+BLOCK_INSTRUCTIONS = {
+    "title": "Write a single warm, specific article title. Plain text. No quotes.",
+    "prologue": "Write a short, intimate 2-3 sentence intro that pulls the reader in with a real moment or honest hook.",
+    "paragraph": "Write a single rich, flowing paragraph (3-6 sentences) on the topic below.",
+    "tips": "Write 4-6 practical tips as a markdown bullet list. Each bullet is one tight sentence.",
+    "pros-cons": "Write a Pros section and Cons section in markdown. 3-4 bullets each.",
+    "key-facts": "Write 4-5 key facts as a markdown bullet list. Concise and scannable.",
+    "image": "Write a short, evocative image caption (1 sentence).",
+    "table": "Output a small useful markdown table (3-5 rows) relevant to the topic.",
+    "chart": "Describe in 1-2 sentences what a chart for this topic should show. Then output a JSON snippet ```json {\"labels\":[...],\"values\":[...]} ``` with sample numeric data.",
+    "cta": "Write a warm, non-pushy call-to-action paragraph (2-3 sentences).",
+    "conclusion": "Write a sincere closing paragraph (3-4 sentences) that ties the article together.",
+    "custom": "Write rich, on-topic content for this custom section.",
+    "resources": "List 4-6 useful resources (books, sites, communities) as markdown bullets with short descriptions.",
+    "references": "List 3-5 credible sources as markdown bullets. Format: - Source Name — short note on what it covers.",
+    "affiliate": "Write a short, friendly, honest affiliate disclosure paragraph. Mention products are personally recommended.",
+}
+
+
+def build_system_prompt(style_id: str, brief: Dict[str, Any]) -> str:
+    base = STYLE_SYSTEM_PROMPTS.get(style_id, STYLE_SYSTEM_PROMPTS["real-person"])
+    context = (
+        f"\n\nARTICLE CONTEXT:\n"
+        f"- Topic: {brief.get('topic', '')}\n"
+        f"- Target audience: {brief.get('audience', '')}\n"
+        f"- Personal angle: {brief.get('angle', '')}\n"
+        f"- Key points to cover: {brief.get('keyPoints', '')}\n"
+        f"- Focus keyword: {brief.get('focusKeyword', '')}\n"
+        f"- Categories: {', '.join(brief.get('categories', []))}\n"
+        f"- Extra instructions: {brief.get('extra', '')}\n\n"
+        f"RULES:\n"
+        f"- Never use phrases like 'in today's fast-paced world', 'navigating', 'embark', 'delve', 'unleash', 'in conclusion'.\n"
+        f"- Use natural human cadence. Vary sentence length.\n"
+        f"- Output ONLY the requested content. No preamble, no explanation, no labels.\n"
+    )
+    return base + context
+
+
+async def llm_complete(system: str, user_text: str, max_tokens: int = 2000) -> str:
+    if not EMERGENT_LLM_KEY:
+        raise HTTPException(500, "EMERGENT_LLM_KEY not configured")
+    session_id = str(uuid.uuid4())
+    chat = LlmChat(
+        api_key=EMERGENT_LLM_KEY,
+        session_id=session_id,
+        system_message=system,
+    ).with_model(*DEFAULT_MODEL)
+    try:
+        result = await chat.send_message(UserMessage(text=user_text))
+        # send_message returns the full string
+        return result if isinstance(result, str) else str(result)
+    except Exception as e:
+        logger.exception("LLM call failed")
+        raise HTTPException(500, f"LLM error: {str(e)}")
+
+
+# ============ MODELS ============
+class BriefIn(BaseModel):
+    topic: str = ""
+    audience: str = ""
+    length: str = ""
+    keyPoints: str = ""
+    angle: str = ""
+    extra: str = ""
+    focusKeyword: str = ""
+    categories: List[str] = []
+    tags: List[str] = []
+
+
+class GenerateBlockIn(BaseModel):
+    styleId: str = "real-person"
+    brief: BriefIn
+    blockType: str
+    blockNote: Optional[str] = ""
+    targetLength: Optional[str] = "medium"
+
+
+class HumanizeIn(BaseModel):
+    text: str
+    styleId: str = "real-person"
+
+
+class MetaIn(BaseModel):
+    title: str
+    content: str
+    focusKeyword: Optional[str] = ""
+
+
+class ImagePromptIn(BaseModel):
+    topic: str
+    angle: Optional[str] = ""
+    styleId: str = "real-person"
+    blockNote: Optional[str] = ""
+
+
+class NewsletterPreviewIn(BaseModel):
+    title: str
+    metaDescription: str
+    keyPoints: str = ""
+    headerImagePrompt: str = ""
+    styleId: str = "newsletter"
+
+
+class SocialSnippetsIn(BaseModel):
+    title: str
+    metaDescription: str
+    content: str
+    styleId: str = "real-person"
+
+
+class YoutubeScriptIn(BaseModel):
+    title: str
+    content: str
+    styleId: str = "storyteller"
+
+
+class LayoutSuggestIn(BaseModel):
+    brief: BriefIn
+    styleId: str = "real-person"
+
+
+# ============ ROUTES ============
 @api_router.get("/")
 async def root():
-    return {"message": "Hello World"}
+    return {"app": "BeastlyForge", "model": DEFAULT_MODEL[1]}
 
-@api_router.post("/status", response_model=StatusCheck)
-async def create_status_check(input: StatusCheckCreate):
-    status_dict = input.model_dump()
-    status_obj = StatusCheck(**status_dict)
-    
-    # Convert to dict and serialize datetime to ISO string for MongoDB
-    doc = status_obj.model_dump()
-    doc['timestamp'] = doc['timestamp'].isoformat()
-    
-    _ = await db.status_checks.insert_one(doc)
-    return status_obj
 
-@api_router.get("/status", response_model=List[StatusCheck])
-async def get_status_checks():
-    # Exclude MongoDB's _id field from the query results
-    status_checks = await db.status_checks.find({}, {"_id": 0}).to_list(1000)
-    
-    # Convert ISO string timestamps back to datetime objects
-    for check in status_checks:
-        if isinstance(check['timestamp'], str):
-            check['timestamp'] = datetime.fromisoformat(check['timestamp'])
-    
-    return status_checks
+@api_router.post("/generate/block")
+async def generate_block(body: GenerateBlockIn):
+    system = build_system_prompt(body.styleId, body.brief.model_dump())
+    instr = BLOCK_INSTRUCTIONS.get(body.blockType, BLOCK_INSTRUCTIONS["paragraph"])
+    user = f"BLOCK TYPE: {body.blockType}\nLENGTH: {body.targetLength}\nNOTE: {body.blockNote or '(none)'}\n\n{instr}"
+    text = await llm_complete(system, user, max_tokens=1500)
+    return {"text": text.strip()}
 
-# Include the router in the main app
+
+@api_router.post("/generate/article")
+async def generate_article(body: dict):
+    """Generate content for an ordered list of blocks in one shot.
+    body: { styleId, brief, blocks: [{id, type, note}] }
+    Returns: { results: { blockId: text } }
+    """
+    style_id = body.get("styleId", "real-person")
+    brief = body.get("brief", {})
+    blocks = body.get("blocks", [])
+    if not blocks:
+        raise HTTPException(400, "No blocks provided")
+    system = build_system_prompt(style_id, brief)
+
+    plan_lines = []
+    for i, b in enumerate(blocks, 1):
+        instr = BLOCK_INSTRUCTIONS.get(b["type"], BLOCK_INSTRUCTIONS["paragraph"])
+        note = b.get("note") or ""
+        plan_lines.append(f"{i}. [{b['id']}] TYPE={b['type']} NOTE={note}\n   TASK: {instr}")
+
+    user = (
+        "Write the full article by producing content for EACH block below in order. "
+        "Return a single JSON object mapping block id -> content string. "
+        "DO NOT wrap in markdown code fences. Output ONLY raw JSON.\n\n"
+        "BLOCKS:\n" + "\n".join(plan_lines) +
+        "\n\nJSON FORMAT EXAMPLE:\n{\"block-id-1\": \"...content...\", \"block-id-2\": \"...content...\"}"
+    )
+    raw = await llm_complete(system, user, max_tokens=6000)
+    raw = raw.strip()
+    if raw.startswith("```"):
+        raw = raw.strip("`")
+        if raw.startswith("json"):
+            raw = raw[4:]
+        raw = raw.strip()
+    try:
+        results = json.loads(raw)
+    except Exception:
+        # fallback: try to extract JSON object
+        start = raw.find("{")
+        end = raw.rfind("}")
+        if start >= 0 and end > start:
+            try:
+                results = json.loads(raw[start:end+1])
+            except Exception:
+                raise HTTPException(500, "Failed to parse model output")
+        else:
+            raise HTTPException(500, "Failed to parse model output")
+    return {"results": results}
+
+
+@api_router.post("/humanize")
+async def humanize(body: HumanizeIn):
+    system = (
+        STYLE_SYSTEM_PROMPTS.get(body.styleId, STYLE_SYSTEM_PROMPTS["real-person"]) +
+        "\n\nYour ONLY task: rewrite the given text so it sounds clearly written by one real person. "
+        "Remove AI tells (em-dashes overuse, 'delve', 'navigating', 'in today's world', 'it's important to note', "
+        "'unleash', 'embark', 'tapestry', 'realm', 'landscape of'). Vary sentence length. Keep meaning. "
+        "Output ONLY the rewritten text — no preamble."
+    )
+    text = await llm_complete(system, body.text, max_tokens=2000)
+    return {"text": text.strip()}
+
+
+@api_router.post("/generate/meta")
+async def generate_meta(body: MetaIn):
+    system = (
+        "You write SEO meta descriptions for pet-care articles. "
+        "Output a single meta description between 150 and 160 characters. "
+        "Warm, specific, includes the focus keyword naturally if provided. "
+        "No quotes. No preamble. Just the description."
+    )
+    user = f"TITLE: {body.title}\nFOCUS KEYWORD: {body.focusKeyword}\n\nARTICLE EXCERPT:\n{body.content[:2000]}"
+    text = await llm_complete(system, user, max_tokens=200)
+    text = text.strip().strip('"').strip("'")
+    return {"text": text}
+
+
+@api_router.post("/generate/image-prompt")
+async def generate_image_prompt(body: ImagePromptIn):
+    system = (
+        "You craft rich, vivid image-generation prompts for pet-care article header images. "
+        "Output ONE detailed prompt (60-90 words) describing scene, subject, lighting, mood, "
+        "composition, lens, and style. Then on a new line output: ALT: <alt text 8-14 words>. "
+        "No other commentary."
+    )
+    user = f"TOPIC: {body.topic}\nANGLE: {body.angle}\nNOTE: {body.blockNote}"
+    text = await llm_complete(system, user, max_tokens=400)
+    lines = text.strip().split("\n")
+    prompt = ""
+    alt = ""
+    for line in lines:
+        if line.strip().upper().startswith("ALT:"):
+            alt = line.split(":", 1)[1].strip()
+        else:
+            prompt += (" " + line.strip())
+    return {"prompt": prompt.strip(), "alt": alt or body.topic}
+
+
+@api_router.post("/generate/newsletter-preview")
+async def generate_newsletter_preview(body: NewsletterPreviewIn):
+    system = (
+        STYLE_SYSTEM_PROMPTS["newsletter"] +
+        "\n\nYou produce a single newsletter preview card. Output strict JSON with keys: "
+        "title (catchy, ~8-12 words), summary (2-3 friendly sentences, 200-320 chars), "
+        "ctaText (3-5 words like 'Read the full guide'), imagePrompt (a rich image prompt for this preview), "
+        "imageAlt (8-14 words alt text). Output ONLY raw JSON, no fences, no preamble."
+    )
+    user = (
+        f"ARTICLE TITLE: {body.title}\n"
+        f"META DESCRIPTION: {body.metaDescription}\n"
+        f"KEY POINTS: {body.keyPoints}\n"
+        f"HEADER IMAGE PROMPT: {body.headerImagePrompt}\n"
+    )
+    raw = await llm_complete(system, user, max_tokens=500)
+    raw = raw.strip().strip("`")
+    if raw.startswith("json"):
+        raw = raw[4:].strip()
+    try:
+        data = json.loads(raw)
+    except Exception:
+        start = raw.find("{"); end = raw.rfind("}")
+        data = json.loads(raw[start:end+1])
+    return data
+
+
+@api_router.post("/generate/social")
+async def generate_social(body: SocialSnippetsIn):
+    system = (
+        STYLE_SYSTEM_PROMPTS.get(body.styleId, STYLE_SYSTEM_PROMPTS["real-person"]) +
+        "\n\nProduce three social posts in strict JSON with keys: x (<=270 chars), instagram (caption + 5 hashtags), "
+        "facebook (2-3 sentences). Output ONLY raw JSON."
+    )
+    user = f"TITLE: {body.title}\nMETA: {body.metaDescription}\n\nEXCERPT:\n{body.content[:2000]}"
+    raw = await llm_complete(system, user, max_tokens=700)
+    raw = raw.strip().strip("`")
+    if raw.startswith("json"):
+        raw = raw[4:].strip()
+    try:
+        data = json.loads(raw)
+    except Exception:
+        start = raw.find("{"); end = raw.rfind("}")
+        data = json.loads(raw[start:end+1])
+    return data
+
+
+@api_router.post("/generate/youtube")
+async def generate_youtube(body: YoutubeScriptIn):
+    system = (
+        STYLE_SYSTEM_PROMPTS.get(body.styleId, STYLE_SYSTEM_PROMPTS["storyteller"]) +
+        "\n\nWrite a 60-90 second YouTube Shorts script for a pet-care creator. "
+        "Sections: [HOOK] 1-2 lines. [BODY] 4-6 short beats. [CTA] one warm closing line. "
+        "Plain text. No JSON. No camera directions in brackets except section labels above."
+    )
+    user = f"TITLE: {body.title}\n\nARTICLE:\n{body.content[:3000]}"
+    text = await llm_complete(system, user, max_tokens=900)
+    return {"text": text.strip()}
+
+
+@api_router.post("/layout/suggest")
+async def suggest_layout(body: LayoutSuggestIn):
+    system = (
+        "You suggest an article block layout for pet-care content. "
+        "Output strict JSON: { blocks: [ { type, note } ] }. Types must be from: "
+        "title, prologue, paragraph, tips, pros-cons, key-facts, image, table, chart, "
+        "cta, conclusion, custom, resources, references, affiliate. "
+        "Include 6-10 blocks tailored to the brief. Output ONLY raw JSON."
+    )
+    user = json.dumps(body.brief.model_dump())
+    raw = await llm_complete(system, user, max_tokens=900)
+    raw = raw.strip().strip("`")
+    if raw.startswith("json"):
+        raw = raw[4:].strip()
+    try:
+        data = json.loads(raw)
+    except Exception:
+        start = raw.find("{"); end = raw.rfind("}")
+        data = json.loads(raw[start:end+1])
+    return data
+
+
+# Mount router
 app.include_router(api_router)
 
 app.add_middleware(
@@ -77,12 +394,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
 
 @app.on_event("shutdown")
 async def shutdown_db_client():

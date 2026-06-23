@@ -1,0 +1,37 @@
+{
+  "summary": "End-to-end testing of BeastlyForge (FastAPI + React TS). Backend: all 11 pytest tests passed (root, generate/block, generate/article multi-block, humanize, generate/meta, image-prompt, newsletter-preview, social, youtube, layout/suggest, error path). Frontend: dashboard, theme toggle (light <-> dark with bf.theme.v1 localStorage), new article navigation, brief/SEO/categories inputs, meta-char-counter, palette + button, Use starter layout, Auto-suggest Layout (LLM), Edit&Preview Generate All (LLM populates all textareas), Newsletter auto-preview, Finalize navigation, Desktop/Mobile toggle with .phone-frame, HTML export tab + copy button — all functional. Drafts persisted across reload (6 blocks restored).",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_beastlyforge_api.py",
+    "/app/test_reports/pytest/beastlyforge_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py llm_complete: max_tokens param is accepted but never passed to LlmChat (.with_model only). Tokens limit therefore unenforced; consider adding .with_max_tokens or removing the parameter to avoid misleading callers.",
+    "server.py newsletter-preview/social/layout-suggest: json.loads fallback uses raw[start:end+1] without try/except, so malformed LLM output raises uncaught exception (500 instead of friendly HTTPException). Wrap fallback parse in try/except like generate_article does.",
+    "server.py generate/article: when raw starts with ``` it strips backticks but only removes 'json' prefix if present immediately after stripping; safe but brittle. Consider regex `^```(?:json)?\\s*([\\s\\S]*?)```$`.",
+    "Composer.tsx persist effect runs on every draft state change (no debounce). For large articles with many keystrokes this writes to localStorage on every char; OK now but worth debouncing (~300ms) for future scale.",
+    "Composer.tsx auto-creates a new draft when route id is unknown and replaces URL — fine, but the redirect happens inside the same useEffect that returns early when an existing draft is found. The early return means subsequent useEffects still run; logic is correct but the comment 'debounced via microtask' is misleading (no debounce present)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_beastlyforge_api.py (created)"
+  ],
+  "success_rate": {
+    "backend": "100% (11/11)",
+    "frontend": "100% on critical flows tested"
+  },
+  "test_credentials": "N/A — no authentication required (single-user app, /app/memory/test_credentials.md not needed).",
+  "seed_data_creation": "No DB seed needed; localStorage-only app. Test drafts auto-cleaned by browser session.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend pytest at /app/backend/tests/test_beastlyforge_api.py; LLM calls take 15-60s each — use timeout=120. Frontend uses data-testid attributes extensively (dashboard-new-article-btn, theme-toggle-btn, brief-topic-input, seo-meta-input, meta-char-counter, category-chip-*, palette-*, auto-suggest-layout-btn, tab-layout/edit/newsletter, generate-all-btn, auto-preview-btn, composer-finalize-btn, view-desktop-btn, view-mobile-btn, export-tab-*, copy-*-btn). Drafts persistence verified within single browser session — separate playwright invocations have separate localStorage and look like 'no persistence' but is expected. Theme toggle writes 'bf.theme.v1' localStorage key and applies/removes 'dark' class on documentElement.",
+  "rca of the issue": "N/A — no bugs found."
+}

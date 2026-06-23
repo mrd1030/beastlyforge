@@ -61,23 +61,28 @@ let webpackConfig = {
 };
 
 webpackConfig.devServer = (devServerConfig) => {
-  // Add health check endpoints if enabled
-  if (config.enableHealthCheck && setupHealthEndpoints && healthPluginInstance) {
-    const originalSetupMiddlewares = devServerConfig.setupMiddlewares;
+  // Convert deprecated react-scripts hooks to webpack-dev-server v5 setupMiddlewares
+  const before = devServerConfig.onBeforeSetupMiddleware;
+  const after = devServerConfig.onAfterSetupMiddleware;
+  delete devServerConfig.onBeforeSetupMiddleware;
+  delete devServerConfig.onAfterSetupMiddleware;
 
-    devServerConfig.setupMiddlewares = (middlewares, devServer) => {
-      // Call original setup if exists
-      if (originalSetupMiddlewares) {
-        middlewares = originalSetupMiddlewares(middlewares, devServer);
-      }
-
-      // Setup health endpoints
+  const existingSetup = devServerConfig.setupMiddlewares;
+  devServerConfig.setupMiddlewares = (middlewares, devServer) => {
+    if (typeof before === "function") before(devServer);
+    if (typeof existingSetup === "function") middlewares = existingSetup(middlewares, devServer);
+    if (typeof after === "function") after(devServer);
+    if (config.enableHealthCheck && setupHealthEndpoints && healthPluginInstance) {
       setupHealthEndpoints(devServer, healthPluginInstance);
+    }
+    return middlewares;
+  };
 
-      return middlewares;
-    };
-  }
-
+  // Allow all hosts in the preview environment
+  devServerConfig.allowedHosts = "all";
+  // Suppress TS error overlay so users see the actual app even if checker reports warnings
+  devServerConfig.client = devServerConfig.client || {};
+  devServerConfig.client.overlay = { errors: false, warnings: false };
   return devServerConfig;
 };
 
