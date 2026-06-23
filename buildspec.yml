@@ -5,22 +5,28 @@ phases:
     runtime-versions:
       nodejs: 20
     commands:
-      - echo "=== Installing Frontend Dependencies ==="
+      - echo "Installing dependencies..."
       - cd frontend
-      - yarn install --frozen-lockfile
+      - npm install --frozen-lockfile
+
+  pre_build:
+    commands:
+      - echo "Running pre-build checks..."
+      - npm run build
 
   build:
     commands:
-      - echo "=== Building Frontend ==="
-      - yarn build
+      - echo "Build completed successfully"
 
   post_build:
     commands:
-      - echo "Build completed successfully on `date`"
-      - ls -la build
+      - echo "Build finished at $(date)"
 
 artifacts:
   files:
     - frontend/build/**/*
-  name: beastlyforge-frontend
-  discard-paths: no
+  name: beastlyforge-frontend-$(date +%Y-%m-%d)
+
+cache:
+  paths:
+    - frontend/node_modules/**/*
