@@ -40,6 +40,15 @@ export default function Finalize() {
 
   const title = draft.blocks.find(b => b.type === "title")?.content || draft.brief.topic || "Untitled article";
 
+  // Generate slug and published URL
+  const slug = title
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "")
+    .slice(0, 70);
+
+  const publishedUrl = `/blog/${slug}`;
+
   const exports = {
     html:       { label: "HTML",         ext: "html", mime: "text/html",        content: () => toHtml(draft) },
     markdown:   { label: "Markdown",     ext: "md",   mime: "text/markdown",    content: () => toMarkdown(draft) },
@@ -103,6 +112,32 @@ export default function Finalize() {
         <Badge variant="outline" className="rounded-full">{draft.styleId}</Badge>
       </div>
 
+      {/* Published URL */}
+      <Card className="mb-6 border-primary/30">
+        <CardContent className="p-4">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <div>
+              <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground mb-1">Published URL</div>
+              <div className="font-mono text-sm break-all">{publishedUrl}</div>
+            </div>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                copyToClipboard(publishedUrl);
+                toast.success("URL copied to clipboard");
+              }}
+              data-testid="copy-published-url-btn"
+            >
+              <Copy className="w-3.5 h-3.5 mr-1.5" /> Copy URL
+            </Button>
+          </div>
+          <div className="mt-2 text-xs text-muted-foreground">
+            Slug: <span className="font-mono">{slug}</span>
+          </div>
+        </CardContent>
+      </Card>
+
       <Tabs defaultValue="final" className="w-full">
         <TabsList data-testid="finalize-tabs">
           <TabsTrigger value="final" data-testid="finalize-tab-preview">Final View</TabsTrigger>
@@ -152,8 +187,7 @@ export default function Finalize() {
                         ) : (
                           <div className="w-full h-full grid place-items-center text-muted-foreground text-[10px] p-3 text-center">{draft.headerImage.alt || "Header preview"}</div>
                         )}
-                      </div>
-                    )}
+                    </div>
                     <article className="bf-prose p-4 text-sm" dangerouslySetInnerHTML={{ __html: safeHtml }} />
                   </div>
                 </div>
