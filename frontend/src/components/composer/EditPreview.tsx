@@ -7,6 +7,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { generateArticle, generateBlock, humanize } from "@/lib/api";
 import { buildLlmPrompt } from "@/lib/exports";
 import { uid } from "@/lib/storage";
+import { getStyleInstructions } from "@/lib/styles";
 import { DEFAULT_AFFILIATE_TEXT } from "@/lib/templates";
 import type { Draft, Block } from "@/types";
 
@@ -51,6 +52,7 @@ export default function EditPreview({ draft, setDraft }: Props) {
 
       const r = await generateArticle({
         styleId: draft.styleId,
+        styleInstructions: getStyleInstructions(draft.styleId),
         brief: draft.brief,
         blocks: blocks.map(b => ({ id: b.id, type: b.type, note: b.note || "" })),
       });
@@ -70,7 +72,7 @@ export default function EditPreview({ draft, setDraft }: Props) {
     setBlockBusy(b.id);
     const t = toast.loading(`Regenerating ${b.label || b.type}…`);
     try {
-      const r = await generateBlock({ styleId: draft.styleId, brief: draft.brief, blockType: b.type, blockNote: b.note });
+      const r = await generateBlock({ styleId: draft.styleId, styleInstructions: getStyleInstructions(draft.styleId), brief: draft.brief, blockType: b.type, blockNote: b.note });
       updateBlock(b.id, { content: r.text });
       toast.success("Regenerated", { id: t });
     } catch (e: any) { toast.error("Failed", { id: t, description: e?.message }); }
@@ -82,7 +84,7 @@ export default function EditPreview({ draft, setDraft }: Props) {
     setBlockBusy(b.id);
     const t = toast.loading("Polishing voice…");
     try {
-      const r = await humanize(b.content, draft.styleId);
+      const r = await humanize(b.content, draft.styleId, getStyleInstructions(draft.styleId));
       updateBlock(b.id, { content: r.text });
       toast.success("Voice polished", { id: t });
     } catch (e: any) { toast.error("Failed", { id: t, description: e?.message }); }
@@ -95,7 +97,7 @@ export default function EditPreview({ draft, setDraft }: Props) {
     try {
       for (const b of draft.blocks) {
         if (!b.content) continue;
-        const r = await humanize(b.content, draft.styleId);
+        const r = await humanize(b.content, draft.styleId, getStyleInstructions(draft.styleId));
         updateBlock(b.id, { content: r.text });
       }
       snapshotVersion("Humanizer polish");

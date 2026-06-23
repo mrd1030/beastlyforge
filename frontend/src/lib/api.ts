@@ -15,13 +15,18 @@ export async function generateArticle(payload: any): Promise<{ results: Record<s
   return data;
 }
 
-export async function humanize(text: string, styleId: string): Promise<{ text: string }> {
-  const { data } = await client.post("/humanize", { text, styleId });
+export async function humanize(text: string, styleId: string, styleInstructions?: string): Promise<{ text: string }> {
+  const { data } = await client.post("/humanize", { text, styleId, styleInstructions });
   return data;
 }
 
 export async function generateMeta(title: string, content: string, focusKeyword: string): Promise<{ text: string }> {
   const { data } = await client.post("/generate/meta", { title, content, focusKeyword });
+  return data;
+}
+
+export async function generateSeo(payload: { title?: string; topic?: string; content?: string; focusKeyword?: string }): Promise<{ focusKeyword: string; metaDescription: string }> {
+  const { data } = await client.post("/generate/seo", payload);
   return data;
 }
 

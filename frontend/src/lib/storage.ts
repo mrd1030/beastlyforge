@@ -1,4 +1,4 @@
-import type { Draft, Brief, AffiliateConfig, HeaderImage, Newsletter, StyleId } from "@/types";
+import type { Draft, Brief, AffiliateConfig, HeaderImage, Newsletter, StyleId, CustomStyle, AppSettings, StandaloneNewsletter } from "@/types";
 import { DEFAULT_AFFILIATE_TEXT } from "@/lib/templates";
 
 const KEYS = {
@@ -6,6 +6,9 @@ const KEYS = {
   CURRENT: "bf.currentDraftId.v1",
   THEME: "bf.theme.v1",
   CUSTOM_CATEGORIES: "bf.customCategories.v1",
+  CUSTOM_STYLES: "bf.customStyles.v1",
+  SETTINGS: "bf.settings.v1",
+  NEWSLETTER: "bf.newsletter.v1",
 };
 
 export function uid(prefix = "id"): string {
@@ -16,7 +19,7 @@ export function emptyBrief(): Brief {
   return {
     topic: "", audience: "", length: "medium",
     keyPoints: "", angle: "", extra: "",
-    focusKeyword: "", metaDescription: "",
+    focusKeyword: "", metaDescription: "", factsToUse: "",
     categories: [], tags: [],
   };
 }
@@ -37,16 +40,21 @@ export function emptyNewsletter(): Newsletter {
   };
 }
 
-export function newDraft(styleId: StyleId = "real-person"): Draft {
+export function newDraft(styleId?: StyleId): Draft {
   const now = Date.now();
+  const settings = loadSettings();
+  const brief = emptyBrief();
+  brief.categories = [...settings.defaultCategories];
+  const aff = emptyAffiliate();
+  aff.enabled = settings.defaultAffiliateEnabled;
   return {
     id: uid("draft"),
     createdAt: now, updatedAt: now,
-    styleId,
-    brief: emptyBrief(),
+    styleId: styleId || settings.defaultStyleId || "real-person",
+    brief,
     blocks: [],
     headerImage: emptyHeader(),
-    affiliate: emptyAffiliate(),
+    affiliate: aff,
     newsletter: emptyNewsletter(),
     versions: [],
   };
@@ -99,6 +107,64 @@ export function loadCustomCategories(): string[] {
 }
 export function saveCustomCategories(c: string[]) {
   localStorage.setItem(KEYS.CUSTOM_CATEGORIES, JSON.stringify(c));
+}
+
+// ---- Custom writing styles ----
+export function loadCustomStyles(): CustomStyle[] {
+  try {
+    const raw = localStorage.getItem(KEYS.CUSTOM_STYLES);
+    const arr = raw ? JSON.parse(raw) : [];
+    return Array.isArray(arr) ? arr : [];
+  } catch { return []; }
+}
+export function saveCustomStyles(styles: CustomStyle[]) {
+  localStorage.setItem(KEYS.CUSTOM_STYLES, JSON.stringify(styles));
+}
+export function upsertCustomStyle(style: CustomStyle) {
+  const list = loadCustomStyles();
+  const idx = list.findIndex(s => s.id === style.id);
+  if (idx >= 0) list[idx] = style; else list.push(style);
+  saveCustomStyles(list);
+}
+export function deleteCustomStyle(id: string) {
+  saveCustomStyles(loadCustomStyles().filter(s => s.id !== id));
+}
+
+// ---- App settings ----
+export function defaultSettings(): AppSettings {
+  return { defaultStyleId: "real-person", defaultCategories: [], defaultAffiliateEnabled: true };
+}
+export function loadSettings(): AppSettings {
+  try {
+    const raw = localStorage.getItem(KEYS.SETTINGS);
+    return raw ? { ...defaultSettings(), ...JSON.parse(raw) } : defaultSettings();
+  } catch { return defaultSettings(); }
+}
+export function saveSettings(s: AppSettings) {
+  localStorage.setItem(KEYS.SETTINGS, JSON.stringify(s));
+}
+
+// ---- Standalone newsletter ----
+export function emptyStandaloneNewsletter(): StandaloneNewsletter {
+  return {
+    title: "This week at BeastlyFacts",
+    header: emptyHeader(),
+    introText: "",
+    outroText: "",
+    featured: null,
+    previews: [],
+    updatedAt: Date.now(),
+  };
+}
+export function loadNewsletter(): StandaloneNewsletter {
+  try {
+    const raw = localStorage.getItem(KEYS.NEWSLETTER);
+    return raw ? { ...emptyStandaloneNewsletter(), ...JSON.parse(raw) } : emptyStandaloneNewsletter();
+  } catch { return emptyStandaloneNewsletter(); }
+}
+export function saveNewsletter(n: StandaloneNewsletter) {
+  n.updatedAt = Date.now();
+  localStorage.setItem(KEYS.NEWSLETTER, JSON.stringify(n));
 }
 
 export const THEME_KEY = KEYS.THEME;

@@ -5,8 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { loadDrafts, deleteDraft, newDraft, upsertDraft, setCurrentDraftId } from "@/lib/storage";
-import { WRITING_STYLES } from "@/lib/templates";
+import { loadDrafts, deleteDraft } from "@/lib/storage";
+import { getStyleById } from "@/lib/styles";
 import type { Draft } from "@/types";
 import { toast } from "sonner";
 
@@ -17,12 +17,7 @@ export default function Drafts() {
 
   useEffect(() => { setDrafts(loadDrafts()); }, []);
 
-  const onNew = () => {
-    const d = newDraft("real-person");
-    upsertDraft(d);
-    setCurrentDraftId(d.id);
-    navigate(`/edit/${d.id}`);
-  };
+  const onNew = () => navigate("/new");
   const onDelete = (id: string) => {
     if (!confirm("Delete this draft?")) return;
     deleteDraft(id);
@@ -66,7 +61,7 @@ export default function Drafts() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {filtered.map(d => {
             const title = d.blocks.find(b => b.type === "title")?.content || d.brief.topic || "Untitled draft";
-            const style = WRITING_STYLES.find(s => s.id === d.styleId)?.name || d.styleId;
+            const style = getStyleById(d.styleId)?.name || d.styleId;
             return (
               <Card key={d.id} className="hover:border-primary/40 hover:shadow-md transition-all group" data-testid={`drafts-card-${d.id}`}>
                 <CardContent className="p-5">

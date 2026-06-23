@@ -1,0 +1,45 @@
+{
+  "summary": "Iteration 2 testing of BeastlyForge feature+fix batch. Backend: 17/17 pytest passed (11 regression + 6 new for /generate/seo + styleInstructions + factsToUse). Frontend critical sidebar typing-focus bug is FIXED — all 9 brief/SEO/facts/custom-cat/custom-tag inputs accept full sentences without focus loss. AI Generate SEO works (populated keyword 22 chars + meta 160/160). Custom writing style flow works (create -> appears in Style Library + Composer). Newsletter standalone page typing works fully and persists across reload. Export tabs (html/md/plain) present. Found ONE critical UI bug: 'Yes, create draft' confirmation dialog creates draft but redirects to /dashboard instead of /edit/:id due to AlertDialog.onOpenChange firing cancelCreate after the action.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "Composer (new article confirmation modal)",
+        "issue": "After clicking 'Yes, create draft' (new-article-confirm-btn) the draft IS created in localStorage but the user lands on /dashboard instead of /edit/:id. Cause: AlertDialog's onOpenChange handler unconditionally calls cancelCreate() when the dialog closes, overriding the navigate('/edit/:id') from confirmCreate(). Workflow is broken — user has to manually find the new draft under My Drafts.",
+        "selector": "[data-testid=\"new-article-confirm-btn\"]",
+        "priority": "HIGH"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_beastlyforge_api.py",
+    "/app/backend/tests/test_seo_and_new_params.py",
+    "/app/test_reports/pytest/iteration_2_results.xml"
+  ],
+  "action_items": [
+    "Fix Composer.tsx AlertDialog onOpenChange: only call cancelCreate when confirmNew was true AND not after a successful confirmCreate. E.g. <AlertDialog open={confirmNew} onOpenChange={(o) => { if (!o && confirmNew) cancelCreate(); }}> OR move navigation('/dashboard') out of onOpenChange entirely and put it only in the explicit Cancel button onClick. Currently confirmCreate navigates to /edit/:id then Radix immediately fires onOpenChange(false) which navigates back to /dashboard, overriding the first navigation."
+  ],
+  "critical_code_review_comments": [
+    "Composer.tsx line 75: AlertDialog onOpenChange={(o) => { if (!o) cancelCreate(); }} runs cancelCreate AFTER confirmCreate succeeds, because closing the dialog (any way) triggers it. Either gate it on a ref/flag set inside confirmCreate, or simply drop the onOpenChange handler and rely solely on the two explicit buttons. Reproduction: navigate to /new (or click any New Article entry), click 'Yes, create draft', observe URL becomes /dashboard while a draft was created.",
+    "server.py llm_complete still accepts max_tokens parameter without forwarding it to LlmChat (carried over from iteration 1).",
+    "Composer.tsx persist effect still has no debounce (carried over)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_seo_and_new_params.py (created — 6 new tests)"
+  ],
+  "success_rate": {
+    "backend": "100% (17/17 pytest)",
+    "frontend": "92% — sidebar typing fix verified, SEO AI verified, Settings custom-style verified, Style Library integration verified, Newsletter verified; only New Article confirmation navigation broken."
+  },
+  "test_credentials": "N/A — single-user app, no auth.",
+  "seed_data_creation": "None — localStorage only. Tests cleared/created drafts via UI flow.",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Iteration 2 verified: backend tests /app/backend/tests/test_seo_and_new_params.py (SEO endpoint, styleInstructions, factsToUse). Critical sidebar typing-focus bug is FIXED in BriefSidebar.tsx (module-level Sec component). REMAINING BUG: Composer.tsx AlertDialog onOpenChange calls cancelCreate after a successful confirmCreate — fix gating then re-test the New Article modal flow. MCP browser sessions are independent (no shared localStorage between invocations), so multi-step persistence tests must be done in one script. To enter Composer programmatically, click dashboard-new-article-btn -> new-article-confirm-btn -> read draft id from localStorage bf.drafts.v1 -> page.goto /edit/<id>. The Brief section in sidebar is collapsed by default (only 'Writing Style' open) — click sidebar-section-brief-toggle first. AI Generate SEO LLM call ~30-45s. All data-testids in the request work as documented.",
+  "rca_of_the_issue": "Confirm-modal nav bug RCA: In /app/frontend/src/pages/Composer.tsx, <AlertDialog open={confirmNew} onOpenChange={(o) => { if (!o) cancelCreate(); }}> means ANY close of the dialog (including clicking 'Yes, create draft' which sets confirmNew=false in confirmCreate) re-enters cancelCreate which calls navigate('/dashboard'). React-router runs both navigations in order; the second wins. Fix: either remove navigate from cancelCreate (leave it only in onClick of Cancel button) or use a ref like didConfirmRef.current to skip cancelCreate in onOpenChange after a confirmation. Repro: visit /new, click 'Yes, create draft', observe URL becomes /dashboard while a draft is silently created."
+}

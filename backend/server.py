@@ -87,20 +87,34 @@ BLOCK_INSTRUCTIONS = {
 }
 
 
-def build_system_prompt(style_id: str, brief: Dict[str, Any]) -> str:
-    base = STYLE_SYSTEM_PROMPTS.get(style_id, STYLE_SYSTEM_PROMPTS["real-person"])
+def build_system_prompt(style_id: str, brief: Dict[str, Any], style_instructions: Optional[str] = None) -> str:
+    base = (style_instructions or "").strip() or STYLE_SYSTEM_PROMPTS.get(style_id, STYLE_SYSTEM_PROMPTS["real-person"])
+    facts = (brief.get('factsToUse', '') or '').strip()
     context = (
         f"\n\nARTICLE CONTEXT:\n"
         f"- Topic: {brief.get('topic', '')}\n"
         f"- Target audience: {brief.get('audience', '')}\n"
-        f"- Personal angle: {brief.get('angle', '')}\n"
+        f"- Personal angle / lived experience: {brief.get('angle', '')}\n"
         f"- Key points to cover: {brief.get('keyPoints', '')}\n"
         f"- Focus keyword: {brief.get('focusKeyword', '')}\n"
         f"- Categories: {', '.join(brief.get('categories', []))}\n"
-        f"- Extra instructions: {brief.get('extra', '')}\n\n"
-        f"RULES:\n"
+        f"- Extra instructions: {brief.get('extra', '')}\n"
+    )
+    if facts:
+        context += (
+            f"\nVERIFIED FACTS TO USE (authoritative — rely ONLY on these for specific claims):\n{facts}\n"
+        )
+    context += (
+        f"\nGROUNDING & ACCURACY RULES (critical — follow strictly):\n"
+        f"- The writer's Key Points, Personal Angle, and the 'Verified facts to use' above are your PRIMARY source of truth. Build the piece around them.\n"
+        f"- Do NOT invent specific statistics, percentages, study results, dates, prices, brand claims, or veterinary/medical assertions. State such specifics ONLY if they appear in the writer's input above.\n"
+        f"- When information is uncertain or not provided, stay general and cautious. Prefer practical, experience-based guidance over precise factual claims.\n"
+        f"- For any health/medical topic, gently recommend consulting a veterinarian rather than asserting clinical facts.\n"
+        f"- Never fabricate sources, citations, studies, or quotes. For references/resources, suggest credible general source TYPES unless specific sources are provided.\n"
+        f"- Prioritize lived, practical, honest advice over generic 'fact' padding.\n\n"
+        f"VOICE RULES:\n"
         f"- Never use phrases like 'in today's fast-paced world', 'navigating', 'embark', 'delve', 'unleash', 'in conclusion'.\n"
-        f"- Use natural human cadence. Vary sentence length.\n"
+        f"- Use natural human cadence. Vary sentence length. Stay true to the chosen writing style above.\n"
         f"- Output ONLY the requested content. No preamble, no explanation, no labels.\n"
     )
     return base + context
@@ -133,6 +147,7 @@ class BriefIn(BaseModel):
     angle: str = ""
     extra: str = ""
     focusKeyword: str = ""
+    factsToUse: str = ""
     categories: List[str] = []
     tags: List[str] = []
 
@@ -143,11 +158,20 @@ class GenerateBlockIn(BaseModel):
     blockType: str
     blockNote: Optional[str] = ""
     targetLength: Optional[str] = "medium"
+    styleInstructions: Optional[str] = ""
 
 
 class HumanizeIn(BaseModel):
     text: str
     styleId: str = "real-person"
+    styleInstructions: Optional[str] = ""
+
+
+class SeoIn(BaseModel):
+    title: str = ""
+    topic: str = ""
+    content: str = ""
+    focusKeyword: Optional[str] = ""
 
 
 class MetaIn(BaseModel):
@@ -197,7 +221,7 @@ async def root():
 
 @api_router.post("/generate/block")
 async def generate_block(body: GenerateBlockIn):
-    system = build_system_prompt(body.styleId, body.brief.model_dump())
+    system = build_system_prompt(body.styleId, body.brief.model_dump(), body.styleInstructions)
     instr = BLOCK_INSTRUCTIONS.get(body.blockType, BLOCK_INSTRUCTIONS["paragraph"])
     user = f"BLOCK TYPE: {body.blockType}\nLENGTH: {body.targetLength}\nNOTE: {body.blockNote or '(none)'}\n\n{instr}"
     text = await llm_complete(system, user, max_tokens=1500)
@@ -215,7 +239,7 @@ async def generate_article(body: dict):
     blocks = body.get("blocks", [])
     if not blocks:
         raise HTTPException(400, "No blocks provided")
-    system = build_system_prompt(style_id, brief)
+    system = build_system_prompt(style_id, brief, body.get("styleInstructions"))
 
     plan_lines = []
     for i, b in enumerate(blocks, 1):
@@ -255,15 +279,49 @@ async def generate_article(body: dict):
 
 @api_router.post("/humanize")
 async def humanize(body: HumanizeIn):
+    base = (body.styleInstructions or "").strip() or STYLE_SYSTEM_PROMPTS.get(body.styleId, STYLE_SYSTEM_PROMPTS["real-person"])
     system = (
-        STYLE_SYSTEM_PROMPTS.get(body.styleId, STYLE_SYSTEM_PROMPTS["real-person"]) +
+        base +
         "\n\nYour ONLY task: rewrite the given text so it sounds clearly written by one real person. "
         "Remove AI tells (em-dashes overuse, 'delve', 'navigating', 'in today's world', 'it's important to note', "
-        "'unleash', 'embark', 'tapestry', 'realm', 'landscape of'). Vary sentence length. Keep meaning. "
+        "'unleash', 'embark', 'tapestry', 'realm', 'landscape of'). Vary sentence length. Keep the meaning and any "
+        "specific facts EXACTLY as given — never add new statistics, claims, or sources. "
         "Output ONLY the rewritten text — no preamble."
     )
     text = await llm_complete(system, body.text, max_tokens=2000)
     return {"text": text.strip()}
+
+
+@api_router.post("/generate/seo")
+async def generate_seo(body: SeoIn):
+    system = (
+        "You are an SEO assistant for warm, authentic pet-care articles. "
+        "Output STRICT JSON (no code fences, no preamble) with exactly these keys: "
+        "focusKeyword (a 2-4 word primary search keyword phrase, lowercase), "
+        "metaDescription (a warm, specific description between 150 and 160 characters that naturally includes the focus keyword). "
+        "Do not invent statistics or claims."
+    )
+    user = (
+        f"TITLE/TOPIC: {body.title or body.topic}\n"
+        f"EXISTING FOCUS KEYWORD (improve if weak): {body.focusKeyword}\n\n"
+        f"ARTICLE EXCERPT:\n{(body.content or '')[:2000]}"
+    )
+    raw = await llm_complete(system, user, max_tokens=300)
+    raw = raw.strip().strip("`")
+    if raw.lower().startswith("json"):
+        raw = raw[4:].strip()
+    try:
+        data = json.loads(raw)
+    except Exception:
+        try:
+            start = raw.find("{"); end = raw.rfind("}")
+            data = json.loads(raw[start:end+1])
+        except Exception:
+            raise HTTPException(500, "Failed to parse SEO output")
+    return {
+        "focusKeyword": str(data.get("focusKeyword", "")).strip(),
+        "metaDescription": str(data.get("metaDescription", "")).strip().strip('"'),
+    }
 
 
 @api_router.post("/generate/meta")
@@ -323,8 +381,11 @@ async def generate_newsletter_preview(body: NewsletterPreviewIn):
     try:
         data = json.loads(raw)
     except Exception:
-        start = raw.find("{"); end = raw.rfind("}")
-        data = json.loads(raw[start:end+1])
+        try:
+            start = raw.find("{"); end = raw.rfind("}")
+            data = json.loads(raw[start:end+1])
+        except Exception:
+            raise HTTPException(500, "Failed to parse model output")
     return data
 
 
@@ -343,8 +404,11 @@ async def generate_social(body: SocialSnippetsIn):
     try:
         data = json.loads(raw)
     except Exception:
-        start = raw.find("{"); end = raw.rfind("}")
-        data = json.loads(raw[start:end+1])
+        try:
+            start = raw.find("{"); end = raw.rfind("}")
+            data = json.loads(raw[start:end+1])
+        except Exception:
+            raise HTTPException(500, "Failed to parse model output")
     return data
 
 
@@ -378,8 +442,11 @@ async def suggest_layout(body: LayoutSuggestIn):
     try:
         data = json.loads(raw)
     except Exception:
-        start = raw.find("{"); end = raw.rfind("}")
-        data = json.loads(raw[start:end+1])
+        try:
+            start = raw.find("{"); end = raw.rfind("}")
+            data = json.loads(raw[start:end+1])
+        except Exception:
+            raise HTTPException(500, "Failed to parse model output")
     return data
 
 

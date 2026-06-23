@@ -27,7 +27,9 @@ export default function Navbar() {
     { to: "/dashboard", label: "Dashboard" },
     { to: "/new", label: "New Article" },
     { to: "/drafts", label: "My Drafts" },
+    { to: "/newsletter", label: "Newsletter" },
     { to: "/styles", label: "Style Library" },
+    { to: "/settings", label: "Settings" },
   ];
 
   return (

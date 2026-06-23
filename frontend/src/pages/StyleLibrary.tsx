@@ -1,7 +1,9 @@
+import { Link } from "react-router-dom";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { WRITING_STYLES } from "@/lib/templates";
-import { Sparkles, Heart, ShieldCheck, BookOpen, GraduationCap, Mail } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { getAllStyles } from "@/lib/styles";
+import { Sparkles, Heart, ShieldCheck, BookOpen, GraduationCap, Mail, Settings as SettingsIcon } from "lucide-react";
 
 const ICONS: Record<string, any> = {
   "real-person": Heart,
@@ -22,16 +24,23 @@ const EXAMPLES: Record<string, string> = {
 };
 
 export default function StyleLibrary() {
+  const styles = getAllStyles();
   return (
     <div className="max-w-[1500px] mx-auto px-4 sm:px-6 lg:px-8 py-10">
-      <div className="mb-8 max-w-2xl">
-        <h1 className="font-display text-3xl sm:text-4xl mb-2">Style Library</h1>
-        <p className="text-muted-foreground">Six voices, all rooted in care. Use them as starting points — your real voice always comes through.</p>
+      <div className="mb-8 flex items-end justify-between gap-4 flex-wrap">
+        <div className="max-w-2xl">
+          <h1 className="font-display text-3xl sm:text-4xl mb-2">Style Library</h1>
+          <p className="text-muted-foreground">Voices rooted in care — built-in and your own. Use them as starting points; your real voice always comes through.</p>
+        </div>
+        <Button variant="outline" asChild className="rounded-full" data-testid="styles-manage-btn">
+          <Link to="/settings"><SettingsIcon className="w-4 h-4 mr-2" /> Manage custom styles</Link>
+        </Button>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-        {WRITING_STYLES.map(s => {
+        {styles.map(s => {
           const Icon = ICONS[s.id] || Sparkles;
+          const example = EXAMPLES[s.id] || s.tagline;
           return (
             <Card key={s.id} className="hover:border-primary/40 hover:shadow-md transition-all" data-testid={`style-lib-${s.id}`}>
               <CardContent className="p-6">
@@ -40,13 +49,16 @@ export default function StyleLibrary() {
                     <Icon className="w-5 h-5" />
                   </div>
                   <div>
-                    <div className="font-display text-xl">{s.name}</div>
+                    <div className="font-display text-xl flex items-center gap-2">
+                      {s.name}
+                      {s.custom && <Badge variant="secondary" className="text-[9px] px-1.5 py-0">Custom</Badge>}
+                    </div>
                     <div className="text-xs text-muted-foreground uppercase tracking-widest mt-0.5">{s.vibe}</div>
                   </div>
                 </div>
                 <p className="text-sm text-muted-foreground mb-4">{s.tagline}</p>
                 <blockquote className="bg-muted/50 border-l-4 border-primary/40 rounded-r-lg p-4 text-sm italic leading-relaxed">
-                  {EXAMPLES[s.id]}
+                  {example}
                 </blockquote>
                 <div className="flex flex-wrap gap-2 mt-4">
                   <Badge variant="outline" className="text-[10px]">Tone-locked</Badge>

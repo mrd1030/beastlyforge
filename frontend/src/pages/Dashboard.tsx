@@ -5,8 +5,8 @@ import { Plus, FileText, Sparkles, BookOpen, ArrowRight, Trash2 } from "lucide-r
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { loadDrafts, deleteDraft, newDraft, upsertDraft, setCurrentDraftId } from "@/lib/storage";
-import { WRITING_STYLES } from "@/lib/templates";
+import { loadDrafts, deleteDraft } from "@/lib/storage";
+import { getStyleById, getAllStyles } from "@/lib/styles";
 import type { Draft } from "@/types";
 import { toast } from "sonner";
 
@@ -16,12 +16,7 @@ export default function Dashboard() {
 
   useEffect(() => { setDrafts(loadDrafts()); }, []);
 
-  const onNew = () => {
-    const d = newDraft("real-person");
-    upsertDraft(d);
-    setCurrentDraftId(d.id);
-    navigate(`/edit/${d.id}`);
-  };
+  const onNew = () => navigate("/new");
 
   const onDelete = (id: string) => {
     deleteDraft(id);
@@ -100,7 +95,7 @@ export default function Dashboard() {
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {drafts.slice(0, 6).map(d => {
               const title = d.blocks.find(b => b.type === "title")?.content || d.brief.topic || "Untitled draft";
-              const style = WRITING_STYLES.find(s => s.id === d.styleId)?.name || d.styleId;
+              const style = getStyleById(d.styleId)?.name || d.styleId;
               return (
                 <motion.div key={d.id} whileHover={{ y: -3 }} transition={{ duration: 0.2 }} data-testid={`draft-card-${d.id}`}>
                   <Card className="group cursor-pointer hover:border-primary/40 hover:shadow-md transition-all">
@@ -132,7 +127,7 @@ export default function Dashboard() {
         <h2 className="font-display text-2xl sm:text-3xl mb-1">A voice for every story</h2>
         <p className="text-sm text-muted-foreground mb-6">Pick a style — switch any time as you write.</p>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-          {WRITING_STYLES.map(s => (
+          {getAllStyles().map(s => (
             <Card key={s.id} className="hover:border-primary/40 transition-colors" data-testid={`home-style-${s.id}`}>
               <CardContent className="p-5">
                 <div className="flex items-center gap-2 mb-2">

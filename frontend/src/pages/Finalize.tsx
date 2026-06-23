@@ -1,7 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
+import DOMPurify from "dompurify";
 import { ArrowLeft, Copy, Download, Smartphone, Monitor, Loader2, Wand2 } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
@@ -30,10 +31,14 @@ export default function Finalize() {
     }
   }, [id, navigate]);
 
+  const safeHtml = useMemo(
+    () => draft ? DOMPurify.sanitize(mdToHtml(toMarkdown(draft)), { ADD_ATTR: ["target", "rel"] }) : "",
+    [draft]
+  );
+
   if (!draft) return <div className="p-10 text-center text-muted-foreground">Loading…</div>;
 
   const title = draft.blocks.find(b => b.type === "title")?.content || draft.brief.topic || "Untitled article";
-  const renderedHtml = mdToHtml(toMarkdown(draft));
 
   const exports = {
     html:       { label: "HTML",         ext: "html", mime: "text/html",        content: () => toHtml(draft) },
@@ -133,22 +138,24 @@ export default function Finalize() {
                       )}
                     </div>
                   )}
-                  <article className="bf-prose" dangerouslySetInnerHTML={{ __html: renderedHtml }} data-testid="article-prose" />
+                  <article className="bf-prose" dangerouslySetInnerHTML={{ __html: safeHtml }} data-testid="article-prose" />
                 </CardContent>
               </Card>
             ) : (
               <div className="phone-frame" data-testid="preview-mobile">
-                <div className="phone-screen overflow-y-auto bf-scroll">
-                  {(draft.headerImage.url || draft.headerImage.prompt) && (
-                    <div className="aspect-[16/9] bg-muted overflow-hidden">
-                      {draft.headerImage.url ? (
-                        <img src={draft.headerImage.url} alt={draft.headerImage.alt} className="w-full h-full object-cover" />
-                      ) : (
-                        <div className="w-full h-full grid place-items-center text-muted-foreground text-[10px] p-3 text-center">{draft.headerImage.alt || "Header preview"}</div>
-                      )}
-                    </div>
-                  )}
-                  <article className="bf-prose p-4 text-sm" dangerouslySetInnerHTML={{ __html: renderedHtml }} />
+                <div className="phone-screen">
+                  <div className="h-full overflow-y-auto bf-scroll" data-testid="phone-scroll">
+                    {(draft.headerImage.url || draft.headerImage.prompt) && (
+                      <div className="aspect-[16/9] bg-muted overflow-hidden">
+                        {draft.headerImage.url ? (
+                          <img src={draft.headerImage.url} alt={draft.headerImage.alt} className="w-full h-full object-cover" />
+                        ) : (
+                          <div className="w-full h-full grid place-items-center text-muted-foreground text-[10px] p-3 text-center">{draft.headerImage.alt || "Header preview"}</div>
+                        )}
+                      </div>
+                    )}
+                    <article className="bf-prose p-4 text-sm" dangerouslySetInnerHTML={{ __html: safeHtml }} />
+                  </div>
                 </div>
               </div>
             )}

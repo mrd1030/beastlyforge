@@ -1,4 +1,7 @@
-import type { Draft, Block } from "@/types";
+import type { Draft, Block, StandaloneNewsletter, NewsletterPreview } from "@/types";
+import { marked } from "marked";
+
+marked.setOptions({ gfm: true, breaks: true });
 
 const escapeHtml = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
@@ -32,39 +35,10 @@ export function toMarkdown(d: Draft): string {
   return parts.join("\n");
 }
 
-// Very small markdown renderer (good enough for previews — no XSS-safe; sanitize at boundary)
+// Markdown -> HTML via `marked` (GFM). Always sanitize before injecting into the DOM.
 export function mdToHtml(md: string): string {
   if (!md) return "";
-  let html = escapeHtml(md);
-  // tables
-  html = html.replace(/((?:^\|.*\|\s*$\n?){2,})/gm, (block) => {
-    const lines = block.trim().split("\n");
-    const head = lines[0].split("|").slice(1, -1).map(c => `<th>${c.trim()}</th>`).join("");
-    const body = lines.slice(2).map(l => `<tr>${l.split("|").slice(1, -1).map(c => `<td>${c.trim()}</td>`).join("")}</tr>`).join("");
-    return `<table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`;
-  });
-  html = html.replace(/^###### (.*)$/gm, "<h6>$1</h6>")
-             .replace(/^##### (.*)$/gm, "<h5>$1</h5>")
-             .replace(/^#### (.*)$/gm, "<h4>$1</h4>")
-             .replace(/^### (.*)$/gm, "<h3>$1</h3>")
-             .replace(/^## (.*)$/gm, "<h2>$1</h2>")
-             .replace(/^# (.*)$/gm, "<h1>$1</h1>");
-  html = html.replace(/^&gt; (.*)$/gm, "<blockquote>$1</blockquote>");
-  html = html.replace(/^[-*] (.*)$/gm, "<li>$1</li>")
-             .replace(/(<li>[\s\S]*?<\/li>)/g, m => `<ul>${m.replace(/<\/li>\n?(?=<li>)/g, "</li>")}</ul>`);
-  html = html.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
-             .replace(/\*(.+?)\*/g, "<em>$1</em>")
-             .replace(/`(.+?)`/g, "<code>$1</code>");
-  html = html.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img alt="$1" src="$2" />');
-  html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
-  // paragraphs (lines not already wrapped)
-  html = html.split(/\n{2,}/).map(p => {
-    const t = p.trim();
-    if (!t) return "";
-    if (/^<(h[1-6]|ul|ol|blockquote|table|img|p)/.test(t)) return t;
-    return `<p>${t.replace(/\n/g, "<br/>")}</p>`;
-  }).join("\n");
-  return html;
+  return marked.parse(md) as string;
 }
 
 export function toHtml(d: Draft): string {
@@ -157,6 +131,69 @@ export function toNewsletterHtml(d: Draft): string {
 </table>
 </body></html>`;
 }
+
+// ---- Standalone Newsletter exports (Newsletter page) ----
+function previewMd(p: NewsletterPreview, idx?: number, featured = false): string {
+  const heading = featured ? `## ⭐ ${p.title}` : `### ${idx}. ${p.title}`;
+  const lines = [heading, ""];
+  if (p.summary) lines.push(p.summary, "");
+  lines.push(`[${p.ctaText || "Read more"}](${p.ctaLink || "#"})`, "");
+  return lines.join("\n");
+}
+
+export function standaloneNewsletterMarkdown(n: StandaloneNewsletter): string {
+  const lines: string[] = [];
+  if (n.title) lines.push(`# ${n.title}`, "");
+  if (n.header.url || n.header.prompt) {
+    lines.push(`![${n.header.alt || "Newsletter header"}](${n.header.url || "https://placehold.co/1200x600"})`, "");
+  }
+  if (n.introText) lines.push(n.introText, "");
+  if (n.featured) { lines.push("---", ""); lines.push(previewMd(n.featured, undefined, true)); }
+  n.previews.forEach((p, i) => { lines.push("---", ""); lines.push(previewMd(p, i + 1)); });
+  if (n.outroText) { lines.push("---", ""); lines.push(n.outroText, ""); }
+  return lines.join("\n");
+}
+
+function previewHtml(p: NewsletterPreview, label: string, featured = false): string {
+  const titleSize = featured ? "26px" : "22px";
+  return `
+    <tr><td style="padding:24px 0;border-top:1px solid #e5e0d7;">
+      ${p.imageAlt || p.imagePrompt ? `<div style="font-size:11px;color:#9b8b7e;margin:0 0 8px;font-style:italic;">[image: ${escapeHtml(p.imageAlt || p.imagePrompt)}]</div>` : ""}
+      <h2 style="font-family:Georgia,serif;font-size:${titleSize};margin:0 0 8px;color:#2C1E16;">${label}${escapeHtml(p.title)}</h2>
+      <p style="font-size:15px;line-height:1.6;color:#5C4D43;margin:0 0 12px;">${escapeHtml(p.summary)}</p>
+      <a href="${escapeHtml(p.ctaLink || "#")}" style="display:inline-block;background:#C86F53;color:#fff;padding:10px 18px;border-radius:8px;text-decoration:none;font-weight:600;">${escapeHtml(p.ctaText || "Read more")}</a>
+    </td></tr>`;
+}
+
+export function standaloneNewsletterHtml(n: StandaloneNewsletter): string {
+  const body =
+    (n.featured ? previewHtml(n.featured, "⭐ ", true) : "") +
+    n.previews.map((p, i) => previewHtml(p, `${i + 1}. `)).join("");
+  return `<!doctype html>
+<html><body style="margin:0;background:#F9F7F1;font-family:-apple-system,Helvetica,sans-serif;color:#2C1E16;">
+<table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="max-width:620px;margin:0 auto;padding:32px 20px;">
+  ${n.title ? `<tr><td style="padding:0 0 8px;"><h1 style="font-family:Georgia,serif;font-size:28px;margin:0;color:#2C1E16;">${escapeHtml(n.title)}</h1></td></tr>` : ""}
+  ${n.header.url || n.header.prompt ? `<tr><td><img src="${escapeHtml(n.header.url || "https://placehold.co/1200x600")}" alt="${escapeHtml(n.header.alt || "")}" style="width:100%;border-radius:12px;display:block;"/></td></tr>` : ""}
+  ${n.introText ? `<tr><td style="padding:24px 0;font-size:16px;line-height:1.7;">${escapeHtml(n.introText).replace(/\n/g, "<br/>")}</td></tr>` : ""}
+  ${body}
+  ${n.outroText ? `<tr><td style="padding:24px 0;border-top:1px solid #e5e0d7;font-size:15px;line-height:1.7;color:#5C4D43;">${escapeHtml(n.outroText).replace(/\n/g, "<br/>")}</td></tr>` : ""}
+</table>
+</body></html>`;
+}
+
+// Plain paste version for beehiiv / Substack composers (clean, no HTML wrapper).
+export function newsletterPlainText(n: StandaloneNewsletter): string {
+  const block = (p: NewsletterPreview, prefix = "") =>
+    [`${prefix}${p.title}`, p.summary, `→ ${p.ctaText || "Read more"}: ${p.ctaLink || "#"}`].filter(Boolean).join("\n");
+  const parts: string[] = [];
+  if (n.title) parts.push(n.title.toUpperCase(), "");
+  if (n.introText) parts.push(n.introText, "");
+  if (n.featured) parts.push("⭐ FEATURED", block(n.featured), "");
+  n.previews.forEach((p, i) => parts.push(block(p, `${i + 1}. `), ""));
+  if (n.outroText) parts.push("—", n.outroText);
+  return parts.join("\n");
+}
+
 
 export function buildLlmPrompt(d: Draft, styleSystem: string): string {
   const lines: string[] = [];

@@ -1,11 +1,20 @@
 // Core BeastlyForge types
-export type StyleId =
-  | "real-person"
-  | "experienced-caregiver"
-  | "direct-no-bs"
-  | "storyteller"
-  | "professional-educator"
-  | "newsletter";
+// Built-in style ids plus any custom style id (e.g. "cstyle_xxx").
+export type StyleId = string;
+
+export interface CustomStyle {
+  id: string;
+  name: string;
+  tagline: string;
+  vibe: string;
+  systemPrompt: string;
+}
+
+export interface AppSettings {
+  defaultStyleId: string;
+  defaultCategories: string[];
+  defaultAffiliateEnabled: boolean;
+}
 
 export type BlockType =
   | "title"
@@ -45,6 +54,7 @@ export interface Brief {
   extra: string;
   focusKeyword: string;
   metaDescription: string;
+  factsToUse: string;
   categories: string[];
   tags: string[];
 }
@@ -69,6 +79,7 @@ export interface NewsletterPreview {
   ctaLink: string;
   imagePrompt: string;
   imageAlt: string;
+  sourceDraftId?: string;
 }
 
 export interface Newsletter {
@@ -98,4 +109,15 @@ export interface Draft {
   newsletter: Newsletter;
   versions: Version[];
   llmPrompt?: string;
+}
+
+// Standalone Newsletter document (separate from a single article draft)
+export interface StandaloneNewsletter {
+  title: string;
+  header: HeaderImage;
+  introText: string;
+  outroText: string;
+  featured: NewsletterPreview | null;
+  previews: NewsletterPreview[];
+  updatedAt: number;
 }
