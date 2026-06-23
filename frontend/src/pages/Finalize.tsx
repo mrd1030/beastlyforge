@@ -11,7 +11,11 @@ import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { getDraft } from "@/lib/storage";
 import type { Draft } from "@/types";
-import { toMarkdown, toHtml, toMdx, toJson, toNewsletterMarkdown, toNewsletterHtml, mdToHtml, downloadFile, copyToClipboard, buildLlmPrompt } from "@/lib/exports";
+import {
+  toMarkdown, toHtml, toMdx, toJson,
+  toNewsletterMarkdown, toNewsletterHtml,
+  mdToHtml, downloadFile, copyToClipboard, buildLlmPrompt
+} from "@/lib/exports";
 import { generateSocial, generateYoutube } from "@/lib/api";
 
 export default function Finalize() {
@@ -66,6 +70,7 @@ export default function Finalize() {
     await copyToClipboard(c);
     toast.success("Copied to clipboard");
   };
+
   const handleDownload = (key: string) => {
     const e = (exports as any)[key];
     const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 60);
@@ -144,16 +149,25 @@ export default function Finalize() {
           <TabsTrigger value="export" data-testid="finalize-tab-export">Code Export</TabsTrigger>
         </TabsList>
 
+        {/* Final View Tab */}
         <TabsContent value="final" className="mt-5">
           <div className="flex items-center justify-end mb-4 gap-2">
-            <Button variant={view === "desktop" ? "default" : "outline"} size="sm"
+            <Button
+              variant={view === "desktop" ? "default" : "outline"}
+              size="sm"
               className={view === "desktop" ? "bg-primary hover:bg-primary/90 text-primary-foreground" : ""}
-              onClick={() => setView("desktop")} data-testid="view-desktop-btn">
+              onClick={() => setView("desktop")}
+              data-testid="view-desktop-btn"
+            >
               <Monitor className="w-4 h-4 mr-1.5" /> Desktop
             </Button>
-            <Button variant={view === "mobile" ? "default" : "outline"} size="sm"
+            <Button
+              variant={view === "mobile" ? "default" : "outline"}
+              size="sm"
               className={view === "mobile" ? "bg-primary hover:bg-primary/90 text-primary-foreground" : ""}
-              onClick={() => setView("mobile")} data-testid="view-mobile-btn">
+              onClick={() => setView("mobile")}
+              data-testid="view-mobile-btn"
+            >
               <Smartphone className="w-4 h-4 mr-1.5" /> Mobile phone
             </Button>
           </div>
@@ -185,9 +199,12 @@ export default function Finalize() {
                         {draft.headerImage.url ? (
                           <img src={draft.headerImage.url} alt={draft.headerImage.alt} className="w-full h-full object-cover" />
                         ) : (
-                          <div className="w-full h-full grid place-items-center text-muted-foreground text-[10px] p-3 text-center">{draft.headerImage.alt || "Header preview"}</div>
+                          <div className="w-full h-full grid place-items-center text-muted-foreground text-[10px] p-3 text-center">
+                            {draft.headerImage.alt || "Header preview"}
+                          </div>
                         )}
-                    </div>
+                      </div>
+                    )}
                     <article className="bf-prose p-4 text-sm" dangerouslySetInnerHTML={{ __html: safeHtml }} />
                   </div>
                 </div>
@@ -196,16 +213,20 @@ export default function Finalize() {
           </motion.div>
         </TabsContent>
 
+        {/* Code Export Tab - FULL VERSION */}
         <TabsContent value="export" className="mt-5">
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
             <div className="lg:col-span-3">
               <div className="rounded-xl border border-border bg-card overflow-hidden">
                 {Object.entries(exports).map(([k, v]) => (
-                  <button key={k} onClick={() => setActiveExport(k)}
+                  <button
+                    key={k}
+                    onClick={() => setActiveExport(k)}
                     data-testid={`export-tab-${k}`}
                     className={`w-full text-left px-4 py-3 text-sm border-b border-border last:border-b-0 transition-colors ${
                       activeExport === k ? "bg-primary/10 text-primary font-medium" : "hover:bg-muted/50"
-                    }`}>
+                    }`}
+                  >
                     {v.label}
                   </button>
                 ))}
@@ -236,22 +257,34 @@ export default function Finalize() {
                       <Button size="sm" variant="outline" onClick={() => handleCopy(activeExport)} data-testid={`copy-${activeExport}-btn`}>
                         <Copy className="w-3.5 h-3.5 mr-1.5" /> Copy
                       </Button>
-                      <Button size="sm" className="bg-primary hover:bg-primary/90 text-primary-foreground"
-                        onClick={() => handleDownload(activeExport)} data-testid={`download-${activeExport}-btn`}>
+                      <Button
+                        size="sm"
+                        className="bg-primary hover:bg-primary/90 text-primary-foreground"
+                        onClick={() => handleDownload(activeExport)}
+                        data-testid={`download-${activeExport}-btn`}
+                      >
                         <Download className="w-3.5 h-3.5 mr-1.5" /> Download
                       </Button>
                     </div>
                   </div>
+
                   {activeExport === "social" && social && (
                     <div className="mb-3 grid grid-cols-1 md:grid-cols-3 gap-2">
                       {(["x", "instagram", "facebook"] as const).map(k => (
                         <div key={k} className="rounded-lg border border-border bg-muted/30 p-3" data-testid={`social-${k}-card`}>
                           <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">{k}</div>
-                          <Textarea rows={5} value={social[k] || ""} onChange={(e) => setSocial({ ...social, [k]: e.target.value })} className="font-mono text-xs" data-testid={`social-${k}-text`} />
+                          <Textarea
+                            rows={5}
+                            value={social[k] || ""}
+                            onChange={(e) => setSocial({ ...social, [k]: e.target.value })}
+                            className="font-mono text-xs"
+                            data-testid={`social-${k}-text`}
+                          />
                         </div>
                       ))}
                     </div>
                   )}
+
                   <Textarea
                     readOnly
                     rows={20}
