@@ -34,14 +34,21 @@ Stack: React 18 + TypeScript, Tailwind + shadcn/ui, Framer Motion, @hello-pangea
 ## Tested
 - iteration_2.json: backend 17/17 pytest; frontend all flows (typing fix, SEO AI, custom style, newsletter) — only the confirm-modal nav bug, now fixed.
 - iteration_3.json: confirm-modal navigation retest 2/2 PASS.
+- iteration_4.json (P2 batch): backend 6/6 pytest (SSE stream + Resend email graceful errors); frontend 100% (live streaming fill, debounced persistence, email validation + graceful domain error, regression).
+
+## Implemented (Jun 2026 — P2 batch, tested)
+- **Per-block live streaming generation**: backend `POST /api/generate/block/stream` (SSE via emergentintegrations `stream_message`); frontend `streamBlock()` reads the stream; EditPreview "Generate (live stream)" button (`stream-all-btn`) fills blocks token-by-token, and per-block "Regenerate" now streams.
+- **Send a test email** (Resend): backend `POST /api/send-email` (`resend` via `asyncio.to_thread`, `EmailStr` validation); Newsletter page has `test-email-input` + `send-test-email-btn` that emails the HTML newsletter. NOTE: requires verifying the sender domain in Resend (currently `hello@beastlyfacts.com` is unverified → sends return a graceful 'domain not verified' error). `RESEND_API_KEY`/`SENDER_EMAIL` in backend/.env.
+- **Debounced localStorage persistence** (400ms) in Composer and Newsletter pages.
+- (Object storage header-image upload intentionally SKIPPED per user — paste-URL only.)
 
 ## Backlog (P1+)
-- Per-block streaming generation
-- Bring-your-own Anthropic / xAI (Grok) key (Settings UI placeholder exists; needs integration + secure storage)
-- Image upload (object storage) for header image
+- Verify Resend sender domain (`beastlyfacts.com`) so test emails actually deliver (or switch SENDER_EMAIL to onboarding@resend.dev for quick testing)
+- Per-block streaming for the bulk one-shot path / streaming progress bar
+- Bring-your-own Anthropic / xAI (Grok) key (Settings UI placeholder exists; needs secure storage)
+- Image upload (object storage) for header image (deferred)
 - Multi-device sync (Firebase / Mongo backend)
-- "Send a test email" newsletter preview to a real inbox
-- Debounce Composer localStorage persistence; forward max_tokens in llm_complete
+- Forward max_tokens in llm_complete
 
 ## Notes
 - Buttons updated to use `forwardRef(function name(props, ref) { ... })` indirection to avoid React 19 + JS TS-inference issues.
