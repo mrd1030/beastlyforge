@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
@@ -28,6 +28,7 @@ export default function Composer() {
   const [confirmNew, setConfirmNew] = useState(false);
   const [activeTab, setActiveTab] = useState("layout");
   const [leftOpen, setLeftOpen] = useState(true);
+  const confirmedRef = useRef(false);
 
   // Load existing draft, or ask before creating a brand-new one.
   useEffect(() => {
@@ -54,6 +55,7 @@ export default function Composer() {
   }, [draft]);
 
   const confirmCreate = () => {
+    confirmedRef.current = true;
     const d = newDraft();
     upsertDraft(d);
     setCurrentDraftId(d.id);
@@ -72,7 +74,7 @@ export default function Composer() {
         <div className="p-10 text-center text-muted-foreground" data-testid="composer-new-placeholder">
           {confirmNew ? "Ready when you are." : "Loading…"}
         </div>
-        <AlertDialog open={confirmNew} onOpenChange={(o) => { if (!o) cancelCreate(); }}>
+        <AlertDialog open={confirmNew} onOpenChange={(o) => { if (!o) { if (confirmedRef.current) { confirmedRef.current = false; return; } cancelCreate(); } }}>
           <AlertDialogContent data-testid="new-article-confirm-dialog">
             <AlertDialogHeader>
               <AlertDialogTitle>Create a new article draft?</AlertDialogTitle>

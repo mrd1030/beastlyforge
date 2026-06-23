@@ -1,0 +1,29 @@
+{
+  "summary": "Frontend-only retest of the New Article confirmation modal navigation bug in /app/frontend/src/pages/Composer.tsx. Both paths verified end-to-end against the public preview URL. CONFIRM path: /dashboard -> click dashboard-new-article-btn -> AlertDialog (new-article-confirm-dialog) shown -> click new-article-confirm-btn -> URL becomes /edit/<id> (e.g. /edit/draft_k8m4okz7n2p), Composer with 'Article Brief' left sidebar visible, draft count grew 0 -> 1. CANCEL path: nav 'New Article' link -> AlertDialog shown -> click new-article-cancel-btn -> URL becomes /dashboard and draft count unchanged (still 1, no new draft created). The confirmedRef.current guard in onOpenChange correctly suppresses cancelCreate after a confirm. Bug from iteration_2 is RESOLVED.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Composer.tsx fix is correct but relies on a ref + side-effect inside onOpenChange. Slightly cleaner alternative would be to drop navigate('/dashboard') from cancelCreate and only call it inside the explicit Cancel button onClick — eliminates the need for confirmedRef entirely. Current implementation works though.",
+    "Carry-over from iteration 2 (not in scope of this retest): server.py llm_complete still accepts max_tokens without forwarding to LlmChat; Composer.tsx persist effect still un-debounced."
+  ],
+  "updated_files": [],
+  "success_rate": {
+    "backend": "skipped (frontend-only retest)",
+    "frontend": "100% (2/2 — confirm path lands on /edit/<id> with draft created; cancel path returns to /dashboard with no draft created)"
+  },
+  "test_credentials": "N/A — single-user localStorage app, no auth.",
+  "seed_data_creation": "One draft created via the confirm flow as part of the test (draft_k8m4okz7n2p). Lives in browser localStorage of the automation session only.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "All previously-flagged BeastlyForge frontend bugs are now resolved: (1) sidebar typing focus loss fixed in iteration_2 via module-level Sec component in BriefSidebar.tsx; (2) New Article confirm modal navigation fixed in iteration_3 via confirmedRef guard in Composer.tsx onOpenChange. To exercise the confirm flow in future tests: go /dashboard -> click [data-testid=dashboard-new-article-btn] -> wait for [data-testid=new-article-confirm-dialog] -> click [data-testid=new-article-confirm-btn] -> URL = /edit/<id>. For cancel: click nav anchor href='/new' (or dashboard-new-article-btn) -> click [data-testid=new-article-cancel-btn] -> URL = /dashboard.",
+  "rca_of_the_issue": "Fix verified. Original RCA: AlertDialog onOpenChange unconditionally called cancelCreate() which did navigate('/dashboard') after confirmCreate() had already navigated to /edit/<id>; the second navigate won. Applied fix: confirmCreate sets confirmedRef.current=true before navigating; onOpenChange handler now does `if(!o){ if(confirmedRef.current){confirmedRef.current=false;return;} cancelCreate(); }` — skipping the cancel side-effect on confirm-driven closes. Validated in browser: URL after confirm is /edit/draft_k8m4okz7n2p (NOT /dashboard) and a draft is created; URL after cancel is /dashboard with no new draft."
+}
