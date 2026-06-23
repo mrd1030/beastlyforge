@@ -30,7 +30,7 @@ function draftToPreview(d: Draft): NewsletterPreview {
     title,
     summary: d.brief.metaDescription || prologue.slice(0, 240),
     ctaText: "Read the full guide",
-    ctaLink: `/articles/${slug(title)}`,
+    ctaLink: `/blog/${slug(title)}`,
     imagePrompt: d.headerImage.prompt || "",
     imageAlt: d.headerImage.alt || "",
     sourceDraftId: d.id,
@@ -53,7 +53,7 @@ export default function Newsletter() {
   }, [nl]);
 
   const update = (patch: Partial<StandaloneNewsletter>) => setNl(prev => ({ ...prev, ...patch }));
-  const updateHeader = (patch: Partial<StandaloneNewsletter["header"]>) => setNl(prev => ({ ...prev, header: { ...prev.header, ...patch } }));
+  const updateHeader = (patch: Partial<StandaloneNewsletter>["header"]) => setNl(prev => ({ ...prev, header: { ...prev.header, ...patch } }));
 
   const editingPreview: NewsletterPreview | null =
     editId === "featured" ? nl.featured : (nl.previews.find(p => p.id === editId) || null);
@@ -249,8 +249,8 @@ export default function Newsletter() {
             <Label>Outro / closing</Label>
             <Textarea rows={3} value={nl.outroText} onChange={e => update({ outroText: e.target.value })} className="mt-1.5"
               placeholder="Thanks for reading, friends. Give your pet a scratch from me." data-testid="newsletter-outro-input" />
-          </CardContent></Card>
-        </div>
+            </CardContent></Card>
+          </div>
 
         {/* Export */}
         <div className="lg:col-span-4">
