@@ -1,10 +1,10 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
-import { Sparkles, RefreshCw, Wand2, Loader2 } from "lucide-react";
+import { Sparkles, RefreshCw, Wand2, Loader2, Radio } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { generateArticle, generateBlock, humanize } from "@/lib/api";
+import { generateArticle, humanize, streamBlock } from "@/lib/api";
 import { buildLlmPrompt } from "@/lib/exports";
 import { uid } from "@/lib/storage";
 import { getStyleInstructions } from "@/lib/styles";
@@ -68,12 +68,37 @@ export default function EditPreview({ draft, setDraft }: Props) {
     } finally { setBusy(false); }
   };
 
+  const onStreamAll = async () => {
+    if (draft.blocks.length === 0) { toast.error("Add some blocks first"); return; }
+    setBusy(true);
+    const t = toast.loading("Streaming your article, block by block…");
+    try {
+      for (const b of draft.blocks) {
+        setBlockBusy(b.id);
+        let acc = "";
+        updateBlock(b.id, { content: "" });
+        await streamBlock(
+          { styleId: draft.styleId, styleInstructions: getStyleInstructions(draft.styleId), brief: draft.brief, blockType: b.type, blockNote: b.note },
+          (delta) => { acc += delta; updateBlock(b.id, { content: acc }); }
+        );
+      }
+      snapshotVersion("Live streamed generation");
+      toast.success("Article streamed", { id: t, description: `${draft.blocks.length} blocks written live.` });
+    } catch (e: any) {
+      toast.error("Streaming failed", { id: t, description: e?.message || "Try again." });
+    } finally { setBusy(false); setBlockBusy(""); }
+  };
+
   const onRegenBlock = async (b: Block) => {
     setBlockBusy(b.id);
     const t = toast.loading(`Regenerating ${b.label || b.type}…`);
     try {
-      const r = await generateBlock({ styleId: draft.styleId, styleInstructions: getStyleInstructions(draft.styleId), brief: draft.brief, blockType: b.type, blockNote: b.note });
-      updateBlock(b.id, { content: r.text });
+      let acc = "";
+      updateBlock(b.id, { content: "" });
+      await streamBlock(
+        { styleId: draft.styleId, styleInstructions: getStyleInstructions(draft.styleId), brief: draft.brief, blockType: b.type, blockNote: b.note },
+        (delta) => { acc += delta; updateBlock(b.id, { content: acc }); }
+      );
       toast.success("Regenerated", { id: t });
     } catch (e: any) { toast.error("Failed", { id: t, description: e?.message }); }
     finally { setBlockBusy(""); }
@@ -128,6 +153,9 @@ export default function EditPreview({ draft, setDraft }: Props) {
             data-testid="generate-all-btn">
             {busy ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <Sparkles className="w-4 h-4 mr-1.5" />}
             Generate Article Content
+          </Button>
+          <Button onClick={onStreamAll} disabled={busy} size="sm" variant="outline" data-testid="stream-all-btn">
+            <Radio className="w-4 h-4 mr-1.5" /> Generate (live stream)
           </Button>
           <Button onClick={onHumanizeAll} disabled={busy} size="sm" variant="outline" data-testid="polish-all-btn">
             <Wand2 className="w-4 h-4 mr-1.5" /> Polish Entire Article

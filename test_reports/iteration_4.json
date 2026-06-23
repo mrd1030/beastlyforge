@@ -1,0 +1,37 @@
+{
+  "summary": "P2 batch verified end-to-end on the public preview URL. Backend: 6/6 pytest tests passed (SSE streaming endpoint returns text/event-stream with delta chunks and final {done:true}; /api/send-email returns 422 on invalid EmailStr/missing field and a graceful 500 with 'domain is not verified' detail as expected). Frontend: stream-all-btn progressively fills all 6 starter-layout blocks live (final lengths [71,379,865,770,927,529] chars); brief-topic-input persists across reload after 400ms debounce; newsletter-title-input persists across reload; Send-test-email invalid-email path shows 'valid email address' toast and does NOT call /api/send-email; valid-email path produces a graceful Sonner toast 'Couldn't send — Failed to send email: The beastlyfacts.com domain is not verified...' and the app remains usable. Regression: dashboard-new-article-btn -> new-article-confirm-btn still lands on /edit/<id>.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/generate/block/stream", "issue": "X-Accel-Buffering:no header set by FastAPI is stripped by the Cloudflare/ingress proxy in the public response (only present internally). SSE still streams via Transfer-Encoding: chunked so functionality is unaffected; only matters if a future nginx hop buffers."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_p2_features.py",
+    "/app/test_reports/pytest/iteration_4_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py llm_complete still accepts max_tokens but never forwards it to LlmChat — carry-over from earlier iterations, not a blocker.",
+    "server.py /api/send-email wraps Resend errors as HTTP 500 with the raw provider message in `detail`. That is good UX-wise (graceful) but it does leak the full provider URL https://resend.com/domains to the client; consider mapping to a sanitized message + a `code` field if the surface ever becomes public.",
+    "Frontend stream-all flow runs blocks sequentially (each call awaited) — works fine but with 6 blocks the user waits ~30s+. Future opt: parallelize independent blocks via Promise.all on the streamBlock readers."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_p2_features.py (new)"
+  ],
+  "success_rate": {
+    "backend": "100% (6/6 pytest)",
+    "frontend": "100% (streaming fill, debounced persistence x2, invalid-email validation, graceful Resend-domain error toast, new-article regression — all passed)"
+  },
+  "test_credentials": "N/A — single-user localStorage app, no auth.",
+  "seed_data_creation": "Created two drafts via the confirm flow in test browser contexts (draft_z3yc0s784sb, draft_2r8axjab621). Lives only in playwright session localStorage.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "P2 features (per-block SSE streaming, Send test email, debounced localStorage persistence) are all working as specified. The Resend send returning HTTP 500 with 'domain is not verified' is INTENTIONAL — the beastlyfacts.com sender domain is not yet verified in Resend. To fully exercise email success, the user would need to verify the sender domain in Resend. Tests file at /app/backend/tests/test_p2_features.py is reusable for regression. Streaming test polls the readable stream and asserts >0 delta events + final {done:true} sentinel. The X-Accel-Buffering header is stripped by Cloudflare on the public route — kept the test relaxed.",
+  "rca_of_the_issue": "N/A — no bugs found this iteration. The expected Resend 'domain not verified' 500 is correctly surfaced as a Sonner toast titled 'Couldn't send' with a descriptive body, and the UI does not crash."
+}

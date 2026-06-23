@@ -6,8 +6,10 @@ from motor.motor_asyncio import AsyncIOMotorClient
 import os
 import logging
 import json
+import asyncio
+import resend
 from pathlib import Path
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, EmailStr
 from typing import Optional, List, Dict, Any
 import uuid
 from datetime import datetime, timezone
@@ -23,6 +25,8 @@ client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ['DB_NAME']]
 
 EMERGENT_LLM_KEY = os.environ.get('EMERGENT_LLM_KEY', '')
+RESEND_API_KEY = os.environ.get('RESEND_API_KEY', '')
+SENDER_EMAIL = os.environ.get('SENDER_EMAIL', '')
 DEFAULT_MODEL = ("anthropic", "claude-sonnet-4-5-20250929")
 
 app = FastAPI(title="BeastlyForge API")
@@ -174,6 +178,12 @@ class SeoIn(BaseModel):
     focusKeyword: Optional[str] = ""
 
 
+class EmailRequest(BaseModel):
+    recipient_email: EmailStr
+    subject: str
+    html_content: str
+
+
 class MetaIn(BaseModel):
     title: str
     content: str
@@ -226,6 +236,40 @@ async def generate_block(body: GenerateBlockIn):
     user = f"BLOCK TYPE: {body.blockType}\nLENGTH: {body.targetLength}\nNOTE: {body.blockNote or '(none)'}\n\n{instr}"
     text = await llm_complete(system, user, max_tokens=1500)
     return {"text": text.strip()}
+
+
+@api_router.post("/generate/block/stream")
+async def generate_block_stream(body: GenerateBlockIn):
+    """Token-by-token SSE stream for a single block."""
+    system = build_system_prompt(body.styleId, body.brief.model_dump(), body.styleInstructions)
+    instr = BLOCK_INSTRUCTIONS.get(body.blockType, BLOCK_INSTRUCTIONS["paragraph"])
+    user = f"BLOCK TYPE: {body.blockType}\nLENGTH: {body.targetLength}\nNOTE: {body.blockNote or '(none)'}\n\n{instr}"
+
+    async def event_gen():
+        if not EMERGENT_LLM_KEY:
+            yield f"data: {json.dumps({'error': 'EMERGENT_LLM_KEY not configured'})}\n\n"
+            return
+        chat = LlmChat(
+            api_key=EMERGENT_LLM_KEY,
+            session_id=str(uuid.uuid4()),
+            system_message=system,
+        ).with_model(*DEFAULT_MODEL)
+        try:
+            async for ev in chat.stream_message(UserMessage(text=user)):
+                if isinstance(ev, TextDelta):
+                    yield f"data: {json.dumps({'delta': ev.content})}\n\n"
+                elif isinstance(ev, StreamDone):
+                    break
+        except Exception as e:
+            logger.exception("Stream failed")
+            yield f"data: {json.dumps({'error': str(e)})}\n\n"
+        yield f"data: {json.dumps({'done': True})}\n\n"
+
+    return StreamingResponse(
+        event_gen(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no", "Connection": "keep-alive"},
+    )
 
 
 @api_router.post("/generate/article")
@@ -448,6 +492,25 @@ async def suggest_layout(body: LayoutSuggestIn):
         except Exception:
             raise HTTPException(500, "Failed to parse model output")
     return data
+
+
+@api_router.post("/send-email")
+async def send_email(request: EmailRequest):
+    if not RESEND_API_KEY or not SENDER_EMAIL:
+        raise HTTPException(400, "Email not configured. Set RESEND_API_KEY and SENDER_EMAIL.")
+    resend.api_key = RESEND_API_KEY
+    params = {
+        "from": SENDER_EMAIL,
+        "to": [request.recipient_email],
+        "subject": request.subject or "Your BeastlyForge newsletter",
+        "html": request.html_content,
+    }
+    try:
+        email = await asyncio.to_thread(resend.Emails.send, params)
+        return {"status": "success", "message": f"Test email sent to {request.recipient_email}", "email_id": email.get("id")}
+    except Exception as e:
+        logger.error(f"Failed to send email: {str(e)}")
+        raise HTTPException(500, f"Failed to send email: {str(e)}")
 
 
 # Mount router

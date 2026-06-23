@@ -165,7 +165,7 @@ export default function NewsletterBuilder({ draft, setDraft }: Props) {
                 {n.previews.map((p, idx) => (
                   <Draggable draggableId={p.id} index={idx} key={p.id}>
                     {(prov, snap2) => (
-                      <motion.div ref={prov.innerRef} {...prov.draggableProps} layout
+                      <motion.div ref={prov.innerRef} {...(prov.draggableProps as any)} layout
                         className={`rounded-xl border bg-card overflow-hidden flex ${snap2.isDragging ? "dragging-shadow border-primary" : "border-border"}`}
                         data-testid={`preview-card-${p.id}`}>
                         <div className="w-28 shrink-0 bg-muted/40 grid place-items-center text-muted-foreground">

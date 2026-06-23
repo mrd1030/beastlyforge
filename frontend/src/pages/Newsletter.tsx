@@ -1,10 +1,9 @@
 import { useEffect, useState } from "react";
 import { DragDropContext, Droppable, Draggable, DropResult } from "@hello-pangea/dnd";
-import { motion } from "framer-motion";
 import { toast } from "sonner";
 import {
   GripVertical, Plus, Trash2, Pencil, Image as ImageIcon, Star, FileText,
-  Copy, Download, Mail, Sparkles,
+  Copy, Download, Mail, Sparkles, Send, Loader2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,7 +13,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { loadNewsletter, saveNewsletter, loadDrafts, uid } from "@/lib/storage";
-import { generateImagePrompt } from "@/lib/api";
+import { generateImagePrompt, sendEmail } from "@/lib/api";
 import {
   standaloneNewsletterHtml, standaloneNewsletterMarkdown, newsletterPlainText,
   copyToClipboard, downloadFile,
@@ -45,8 +44,13 @@ export default function Newsletter() {
   const [pickMode, setPickMode] = useState<"featured" | "preview">("preview");
   const [drafts, setDrafts] = useState<Draft[]>([]);
   const [exportTab, setExportTab] = useState("html");
+  const [testEmail, setTestEmail] = useState("");
+  const [sending, setSending] = useState(false);
 
-  useEffect(() => { saveNewsletter(nl); }, [nl]);
+  useEffect(() => {
+    const t = setTimeout(() => saveNewsletter(nl), 400);
+    return () => clearTimeout(t);
+  }, [nl]);
 
   const update = (patch: Partial<StandaloneNewsletter>) => setNl(prev => ({ ...prev, ...patch }));
   const updateHeader = (patch: Partial<StandaloneNewsletter["header"]>) => setNl(prev => ({ ...prev, header: { ...prev.header, ...patch } }));
@@ -107,6 +111,20 @@ export default function Newsletter() {
 
   const doCopy = async () => { await copyToClipboard(exports[exportTab].content()); toast.success("Copied to clipboard"); };
   const doDownload = () => { const e = exports[exportTab]; downloadFile(`${slug(nl.title || "newsletter")}.${e.ext}`, e.content(), e.mime); };
+
+  const sendTest = async () => {
+    const email = testEmail.trim();
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { toast.error("Enter a valid email address"); return; }
+    setSending(true);
+    const t = toast.loading(`Sending a test to ${email}…`);
+    try {
+      const r = await sendEmail({ recipient_email: email, subject: nl.title || "Your BeastlyForge newsletter", html_content: standaloneNewsletterHtml(nl) });
+      toast.success("Test email sent", { id: t, description: r?.message });
+    } catch (e: any) {
+      const detail = e?.response?.data?.detail || e?.message || "Failed to send";
+      toast.error("Couldn't send", { id: t, description: detail });
+    } finally { setSending(false); }
+  };
 
   const PreviewCard = ({ p, idx, featured }: { p: NewsletterPreview; idx?: number; featured?: boolean }) => (
     <div className={`rounded-xl border bg-card overflow-hidden flex ${featured ? "border-primary/60 ring-1 ring-primary/20" : "border-border"}`}
@@ -208,14 +226,14 @@ export default function Newsletter() {
                     {nl.previews.map((p, idx) => (
                       <Draggable draggableId={p.id} index={idx} key={p.id}>
                         {(prov, snap2) => (
-                          <motion.div ref={prov.innerRef} {...prov.draggableProps} layout
+                          <div ref={prov.innerRef} {...(prov.draggableProps as any)}
                             className={`rounded-xl border bg-card overflow-hidden flex ${snap2.isDragging ? "dragging-shadow border-primary" : "border-border"}`}>
                             <button {...prov.dragHandleProps} className="drag-handle px-1 text-muted-foreground hover:text-foreground grid place-items-center"
                               data-testid={`preview-drag-handle-${p.id}`}>
                               <GripVertical className="w-4 h-4" />
                             </button>
                             <div className="flex-1"><PreviewCard p={p} idx={idx} /></div>
-                          </motion.div>
+                          </div>
                         )}
                       </Draggable>
                     ))}
@@ -255,6 +273,20 @@ export default function Newsletter() {
                   </TabsContent>
                 ))}
               </Tabs>
+              <div className="mt-4 pt-4 border-t border-border">
+                <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground mb-2 flex items-center gap-1.5">
+                  <Send className="w-3.5 h-3.5" /> Send a test email
+                </div>
+                <div className="flex gap-2">
+                  <Input type="email" placeholder="you@example.com" value={testEmail}
+                    onChange={e => setTestEmail(e.target.value)} data-testid="test-email-input" />
+                  <Button size="sm" className="bg-primary hover:bg-primary/90 text-primary-foreground shrink-0"
+                    onClick={sendTest} disabled={sending} data-testid="send-test-email-btn">
+                    {sending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+                  </Button>
+                </div>
+                <p className="text-[11px] text-muted-foreground mt-1.5">Sends the HTML version to your inbox to preview before publishing.</p>
+              </div>
             </CardContent></Card>
           </div>
         </div>

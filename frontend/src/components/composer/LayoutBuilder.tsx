@@ -183,7 +183,7 @@ export default function LayoutBuilder({ draft, setDraft, seedStarter }: Props) {
                   <Draggable draggableId={b.id} index={idx} key={b.id}>
                     {(prov, snap2) => (
                       <motion.div layout
-                        ref={prov.innerRef} {...prov.draggableProps}
+                        ref={prov.innerRef} {...(prov.draggableProps as any)}
                         className={`rounded-xl border bg-card transition-shadow ${snap2.isDragging ? "dragging-shadow border-primary" : "border-border"}`}
                         data-testid={`canvas-block-${b.id}`}>
                         <div className="flex items-center gap-2 px-3 py-2 border-b border-border/60">

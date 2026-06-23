@@ -42,9 +42,11 @@ export default function Composer() {
     setConfirmNew(true);
   }, [id, navigate]);
 
-  // Persist whenever the draft changes.
+  // Persist whenever the draft changes (debounced).
   useEffect(() => {
-    if (draft) upsertDraft(draft);
+    if (!draft) return;
+    const t = setTimeout(() => upsertDraft(draft), 400);
+    return () => clearTimeout(t);
   }, [draft]);
 
   // External "Save" button event.

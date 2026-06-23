@@ -54,3 +54,43 @@ export async function suggestLayout(payload: any) {
   const { data } = await client.post("/layout/suggest", payload);
   return data;
 }
+
+export async function sendEmail(payload: { recipient_email: string; subject: string; html_content: string }) {
+  const { data } = await client.post("/send-email", payload);
+  return data;
+}
+
+// Token-by-token streaming for a single block via SSE.
+export async function streamBlock(
+  payload: any,
+  onDelta: (text: string) => void,
+  signal?: AbortSignal
+): Promise<void> {
+  const resp = await fetch(`${API}/generate/block/stream`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+    signal,
+  });
+  if (!resp.ok || !resp.body) throw new Error(`Stream failed (${resp.status})`);
+  const reader = resp.body.getReader();
+  const decoder = new TextDecoder();
+  let buf = "";
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += decoder.decode(value, { stream: true });
+    const parts = buf.split("\n\n");
+    buf = parts.pop() || "";
+    for (const part of parts) {
+      const line = part.trim();
+      if (!line.startsWith("data:")) continue;
+      const payloadStr = line.slice(5).trim();
+      if (!payloadStr) continue;
+      const evt = JSON.parse(payloadStr);
+      if (evt.error) throw new Error(evt.error);
+      if (evt.delta) onDelta(evt.delta);
+      if (evt.done) return;
+    }
+  }
+}
