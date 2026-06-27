@@ -203,8 +203,14 @@ export async function pushToSanity(draft: Draft, token: string): Promise<string>
   );
 
   if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error((err as any)?.error?.description || (err as any)?.message || `Sanity API error ${res.status}`);
+    const body = await res.text().catch(() => "");
+    let msg = `Sanity API error ${res.status}`;
+    try {
+      const err = JSON.parse(body);
+      msg = err?.error?.description || err?.message || err?.error || msg;
+    } catch {}
+    console.error("[Sanity push] status:", res.status, "body:", body);
+    throw new Error(msg);
   }
 
   return doc._id;
