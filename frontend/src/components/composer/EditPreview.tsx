@@ -127,6 +127,7 @@ const updateBlock = (id: string, patch: Partial<Block>) => {
 
     let streamed = 0;
     let failed = 0;
+    let storyAccum = ""; // rolling narrative context passed to each block
     try {
       for (const b of blocks) {
         if (ctrl.signal.aborted) break;
@@ -135,10 +136,11 @@ const updateBlock = (id: string, patch: Partial<Block>) => {
         updateBlock(b.id, { content: "" });
         try {
           await streamBlock(
-            { styleId: draft.styleId, styleInstructions: getStyleInstructions(draft.styleId), brief: draft.brief, blockType: b.type, blockNote: b.note },
+            { styleId: draft.styleId, styleInstructions: getStyleInstructions(draft.styleId), brief: draft.brief, blockType: b.type, blockNote: b.note, priorContent: storyAccum },
             (delta) => { acc += delta; updateBlock(b.id, { content: acc }); },
             ctrl.signal,
           );
+          if (acc) storyAccum = storyAccum ? storyAccum + "\n\n" + acc : acc;
           streamed++;
         } catch (blockErr: any) {
           if (ctrl.signal.aborted) break;

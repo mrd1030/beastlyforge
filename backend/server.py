@@ -290,6 +290,7 @@ class GenerateBlockIn(BaseModel):
     blockNote: Optional[str] = ""
     targetLength: Optional[str] = "medium"
     styleInstructions: Optional[str] = ""
+    priorContent: Optional[str] = ""  # story/article written so far — used to continue narrative
 
 
 class HumanizeIn(BaseModel):
@@ -362,11 +363,22 @@ async def root():
     return {"app": "BeastlyForge", "model": DEFAULT_MODEL[1]}
 
 
+def _build_block_user_prompt(body: GenerateBlockIn) -> str:
+    instr = BLOCK_INSTRUCTIONS.get(body.blockType, BLOCK_INSTRUCTIONS["paragraph"])
+    prior = (body.priorContent or "").strip()
+    user = f"BLOCK TYPE: {body.blockType}\nLENGTH: {body.targetLength}\nNOTE: {body.blockNote or '(none)'}\n\n{instr}"
+    if prior:
+        user = (
+            f"STORY / ARTICLE WRITTEN SO FAR (do NOT repeat or summarize this — continue from where it ends):\n"
+            f"---\n{prior}\n---\n\n"
+        ) + user
+    return user
+
+
 @api_router.post("/generate/block")
 async def generate_block(body: GenerateBlockIn):
     system = build_system_prompt(body.styleId, body.brief.model_dump(), body.styleInstructions)
-    instr = BLOCK_INSTRUCTIONS.get(body.blockType, BLOCK_INSTRUCTIONS["paragraph"])
-    user = f"BLOCK TYPE: {body.blockType}\nLENGTH: {body.targetLength}\nNOTE: {body.blockNote or '(none)'}\n\n{instr}"
+    user = _build_block_user_prompt(body)
     text = await llm_complete(system, user, max_tokens=1500)
     return {"text": text.strip()}
 
@@ -375,8 +387,7 @@ async def generate_block(body: GenerateBlockIn):
 async def generate_block_stream(body: GenerateBlockIn):
     """Token-by-token SSE stream for a single block."""
     system = build_system_prompt(body.styleId, body.brief.model_dump(), body.styleInstructions)
-    instr = BLOCK_INSTRUCTIONS.get(body.blockType, BLOCK_INSTRUCTIONS["paragraph"])
-    user = f"BLOCK TYPE: {body.blockType}\nLENGTH: {body.targetLength}\nNOTE: {body.blockNote or '(none)'}\n\n{instr}"
+    user = _build_block_user_prompt(body)
 
     async def event_gen():
         try:
