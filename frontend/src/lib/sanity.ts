@@ -107,6 +107,29 @@ function parseProsConsContent(content: string): any {
   return { _type: "prosCons", _key: uid(), pros, cons };
 }
 
+// Parse a markdown table into a Sanity comparisonTable object.
+function parseTableContent(content: string): any {
+  const lines = content.split("\n").map(l => l.trim()).filter(Boolean);
+  // Find a title line (anything before the first | row)
+  let title = "Comparison Table";
+  const tableLines: string[] = [];
+  for (const line of lines) {
+    if (line.startsWith("|")) tableLines.push(line);
+    else if (tableLines.length === 0) title = line.replace(/^#+\s*/, "").trim();
+  }
+
+  // Parse header row and separator row
+  const dataRows = tableLines.filter(l => !/^\|[\s|:-]+\|$/.test(l) && !/^[\s|:-]+$/.test(l));
+  const parseRow = (line: string) =>
+    line.split("|").map(c => c.trim()).filter((_, i, a) => i > 0 && i < a.length - 1);
+
+  const [headerRow, ...bodyRows] = dataRows;
+  const headers = headerRow ? parseRow(headerRow) : [];
+  const rows = bodyRows.map(line => ({ _type: "row", _key: uid(), cells: parseRow(line) }));
+
+  return { _type: "comparisonTable", _key: uid(), title, headers, rows };
+}
+
 // Parse resources/references markdown into a Sanity sourcesBlock.
 function parseSourcesContent(content: string): any {
   const sources: any[] = [];
@@ -158,6 +181,9 @@ export function draftToSanityDoc(draft: Draft): any {
         break;
       case "affiliate":
         body.push({ _type: "affiliateDisclosure", _key: uid(), text: content });
+        break;
+      case "table":
+        body.push(parseTableContent(content));
         break;
       case "references":
       case "resources":
