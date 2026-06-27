@@ -15,7 +15,11 @@ import uuid
 from datetime import datetime, timezone
 
 import anthropic as anthropic_sdk
-from emergentintegrations.llm.chat import LlmChat, UserMessage, TextDelta, StreamDone
+try:
+    from emergentintegrations.llm.chat import LlmChat, UserMessage, TextDelta, StreamDone
+    _HAS_EMERGENT = True
+except ImportError:
+    _HAS_EMERGENT = False
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -145,8 +149,8 @@ async def llm_complete(system: str, user_text: str, max_tokens: int = 2000) -> s
             logger.exception("Anthropic API call failed")
             raise HTTPException(500, f"Anthropic error: {str(e)}")
     # Fallback: emergentintegrations proxy
-    if not EMERGENT_LLM_KEY:
-        raise HTTPException(500, "No LLM key configured. Set ANTHROPIC_API_KEY or EMERGENT_LLM_KEY.")
+    if not _HAS_EMERGENT or not EMERGENT_LLM_KEY:
+        raise HTTPException(500, "No LLM key configured. Set ANTHROPIC_API_KEY in backend/.env.")
     session_id = str(uuid.uuid4())
     chat = LlmChat(
         api_key=EMERGENT_LLM_KEY,
@@ -282,8 +286,8 @@ async def generate_block_stream(body: GenerateBlockIn):
                     async for text in stream.text_stream:
                         yield f"data: {json.dumps({'delta': text})}\n\n"
             else:
-                if not EMERGENT_LLM_KEY:
-                    yield f"data: {json.dumps({'error': 'No LLM key configured. Set ANTHROPIC_API_KEY or EMERGENT_LLM_KEY.'})}\n\n"
+                if not _HAS_EMERGENT or not EMERGENT_LLM_KEY:
+                    yield f"data: {json.dumps({'error': 'No LLM key configured. Set ANTHROPIC_API_KEY in backend/.env.'})}\n\n"
                     return
                 chat = LlmChat(
                     api_key=EMERGENT_LLM_KEY,
