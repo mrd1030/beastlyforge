@@ -178,12 +178,13 @@ export default function BriefSidebar({ draft, setDraft, leftOpen, setLeftOpen, o
             metaDescription: r.metaDescription || prev.brief.metaDescription,
             categories:      mergedCats,
             tags:            mergedTags,
+            factsToUse:      r.factsToUse || prev.brief.factsToUse,
           },
         };
       });
-      // Automatically open the brief section so the user can see what filled in.
-      setOpenSection("brief");
-      toast.success("Brief generated", { id: t, description: "All fields filled — tweak anything that doesn't feel right." });
+      // Open facts section if web results came back, otherwise brief section.
+      setOpenSection(r.factsToUse ? "facts" : "brief");
+      toast.success("Brief generated", { id: t, description: r.factsToUse ? "Facts sourced from the web — review before writing." : "All fields filled — tweak anything that doesn't feel right." });
     } catch (e: any) {
       toast.error("Failed to generate brief", { id: t, description: e?.message });
     } finally { setBriefBusy(false); }

@@ -15,6 +15,7 @@ import uuid
 from datetime import datetime, timezone
 
 import anthropic as anthropic_sdk
+from tavily import TavilyClient
 try:
     from emergentintegrations.llm.chat import LlmChat, UserMessage, TextDelta, StreamDone
     _HAS_EMERGENT = True
@@ -22,8 +23,10 @@ except ImportError:
     _HAS_EMERGENT = False
 
 ROOT_DIR = Path(__file__).parent
-load_dotenv(ROOT_DIR / '.env')          # backend/.env (legacy)
-load_dotenv(ROOT_DIR.parent / '.env')   # root .env (takes precedence)
+_env_path = ROOT_DIR.parent / '.env'
+load_dotenv(ROOT_DIR / '.env', override=True)
+load_dotenv(_env_path, override=True)
+print(f"[env] Loading from: {_env_path} (exists={_env_path.exists()})")
 
 # MongoDB
 mongo_url = os.environ['MONGO_URL']
@@ -35,6 +38,7 @@ EMERGENT_LLM_KEY = os.environ.get('EMERGENT_LLM_KEY', '')
 RESEND_API_KEY = os.environ.get('RESEND_API_KEY', '')
 SENDER_EMAIL = os.environ.get('SENDER_EMAIL', '')
 CLAUDE_MODEL = os.environ.get('CLAUDE_MODEL', 'claude-sonnet-4-6')
+TAVILY_API_KEY = os.environ.get('TAVILY_API_KEY', '')
 DEFAULT_MODEL = ("anthropic", "claude-sonnet-4-5-20250929")  # used only when falling back to emergentintegrations
 
 # Prefer direct Anthropic key; fall back to emergentintegrations proxy.
@@ -534,9 +538,43 @@ async def suggest_layout(body: LayoutSuggestIn):
     return data
 
 
+async def _search_facts(topic: str) -> str:
+    """Run a Tavily search and return a clean bullet list of sourced facts."""
+    if not TAVILY_API_KEY:
+        return ""
+    try:
+        tavily = TavilyClient(api_key=TAVILY_API_KEY)
+        results = await asyncio.to_thread(
+            tavily.search,
+            query=f"{topic} pet care facts",
+            search_depth="advanced",
+            max_results=5,
+            include_answer=True,
+        )
+        lines = []
+        # Include the synthesized answer if present
+        if results.get("answer"):
+            lines.append(f"- {results['answer'].strip()}")
+        # Pull key sentences from each result
+        for r in results.get("results", []):
+            content = (r.get("content") or "").strip()
+            if content:
+                # Take first 2 sentences as a fact bullet
+                sentences = [s.strip() for s in content.replace("\n", " ").split(".") if len(s.strip()) > 30]
+                for s in sentences[:2]:
+                    lines.append(f"- {s}. (Source: {r.get('url', '')})")
+        return "\n".join(lines[:10])  # cap at 10 bullets
+    except Exception as e:
+        logger.warning(f"Tavily search failed: {e}")
+        return ""
+
+
 @api_router.post("/generate/brief")
 async def generate_brief(body: BriefGenerateIn):
-    """Auto-fill all brief fields from a topic/title in one shot."""
+    """Auto-fill all brief fields from a topic/title in one shot, with real web facts."""
+    # Run web search and brief generation in parallel
+    facts_task = asyncio.create_task(_search_facts(body.topic))
+
     system = (
         "You are a content strategist for BeastlyFacts.com, a warm, authentic pet-care blog. "
         "Given a topic/title and writing style, return a complete article brief as strict JSON. "
@@ -554,7 +592,11 @@ async def generate_brief(body: BriefGenerateIn):
     )
     style_hint = STYLE_SYSTEM_PROMPTS.get(body.styleId, "")
     user = f"TOPIC: {body.topic}\nWRITING STYLE CONTEXT: {style_hint[:300]}"
-    raw = await llm_complete(system, user, max_tokens=800)
+
+    raw, facts = await asyncio.gather(
+        llm_complete(system, user, max_tokens=800),
+        facts_task,
+    )
     raw = raw.strip().strip("`")
     if raw.lower().startswith("json"):
         raw = raw[4:].strip()
@@ -574,6 +616,7 @@ async def generate_brief(body: BriefGenerateIn):
         "metaDescription": str(data.get("metaDescription", "")).strip().strip('"'),
         "categories": [str(c) for c in data.get("categories", []) if isinstance(c, str)],
         "tags": [str(t).lower().replace(" ", "-") for t in data.get("tags", []) if isinstance(t, str)],
+        "factsToUse": facts,
     }
 
 

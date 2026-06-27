@@ -63,6 +63,7 @@ export async function generateBrief(payload: { topic: string; styleId: string })
   metaDescription: string;
   categories: string[];
   tags: string[];
+  factsToUse: string;
 }> {
   const { data } = await client.post("/generate/brief", payload);
   return data;
