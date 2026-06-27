@@ -20,7 +20,7 @@ export function emptyBrief(): Brief {
     topic: "", audience: "", length: "medium",
     keyPoints: "", angle: "", extra: "",
     focusKeyword: "", metaDescription: "", factsToUse: "",
-    categories: [], tags: [],
+    categories: [], tags: [], slug: "", canonicalUrl: "",
   };
 }
 

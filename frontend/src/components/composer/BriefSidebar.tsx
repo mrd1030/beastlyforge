@@ -338,6 +338,10 @@ export default function BriefSidebar({ draft, setDraft, leftOpen, setLeftOpen, o
             </Button>
           </div>
           <div>
+            <Label htmlFor="slug">Slug</Label>
+            <Input id="slug" value={draft.brief.slug} onChange={e => updateBrief({ slug: e.target.value })} placeholder="my-article-slug" data-testid="seo-slug-input" />
+          </div>
+          <div>
             <Label htmlFor="kw">Focus Keyword</Label>
             <Input id="kw" value={draft.brief.focusKeyword} onChange={e => updateBrief({ focusKeyword: e.target.value })} placeholder="bearded dragon diet" data-testid="seo-keyword-input" />
           </div>
@@ -356,6 +360,10 @@ export default function BriefSidebar({ draft, setDraft, leftOpen, setLeftOpen, o
             <Button variant="ghost" size="sm" className="mt-2" onClick={onAutoMeta} data-testid="auto-meta-btn">
               <Sparkles className="w-3.5 h-3.5 mr-1.5" /> Auto-generate description from content
             </Button>
+          </div>
+          <div>
+            <Label htmlFor="canonical">Canonical URL</Label>
+            <Input id="canonical" value={draft.brief.canonicalUrl} onChange={e => updateBrief({ canonicalUrl: e.target.value })} placeholder="https://yourblog.com/blog/my-article" data-testid="seo-canonical-input" />
           </div>
         </Sec>
 

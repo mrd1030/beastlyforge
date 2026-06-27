@@ -32,7 +32,8 @@ export type BlockType =
   | "custom"
   | "resources"
   | "references"
-  | "affiliate";
+  | "affiliate"
+  | "ending";
 
 export interface Block {
   id: string;
@@ -58,6 +59,8 @@ export interface Brief {
   factsToUse: string;
   categories: string[];
   tags: string[];
+  slug: string;
+  canonicalUrl: string;
 }
 
 export interface HeaderImage {

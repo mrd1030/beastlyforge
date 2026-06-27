@@ -24,10 +24,59 @@ function blockToMarkdown(b: Block): string {
   }
 }
 
+function toSlug(title: string): string {
+  return title.toLowerCase().replace(/[^a-z0-9\s-]/g, "").trim().replace(/\s+/g, "-");
+}
+
+function toDateStr(ts: number): string {
+  return new Date(ts).toISOString().slice(0, 10);
+}
+
+function q(s: string): string {
+  return `"${(s || "").replace(/"/g, '\\"')}"`;
+}
+
+function buildFrontmatter(d: Draft): string {
+  const titleBlock = d.blocks.find(b => b.type === "title");
+  const title = titleBlock?.content?.trim() || d.brief.topic || "Untitled";
+  const slug = d.brief.slug || toSlug(title);
+  const today = toDateStr(Date.now());
+  const created = toDateStr(d.createdAt);
+  const updated = toDateStr(d.updatedAt);
+  const words = wordCount(d);
+  const rt = readingTime(words);
+  const category = d.brief.categories[0] || "";
+  const tags = d.brief.tags.length ? `[${d.brief.tags.map(t => `"${t}"`).join(", ")}]` : "[]";
+
+  const lines = [
+    "---",
+    `title: ${q(title)}`,
+    `slug: ${q(slug)}`,
+    `date: ${q(created)}`,
+    `lastUpdated: ${q(updated)}`,
+    `lastReviewed: ${q(today)}`,
+    `category: ${q(category)}`,
+    `tags: ${tags}`,
+    `excerpt: ${q(d.brief.metaDescription)}`,
+    `description: ${q(d.brief.metaDescription)}`,
+    `image: ${q(d.headerImage.url || "")}`,
+    `imageAlt: ${q(d.headerImage.alt || "")}`,
+    `author: "Mike"`,
+    `status: "published"`,
+    `affiliate: ${d.affiliate.enabled}`,
+    `noIndex: false`,
+    `canonicalUrl: ${q(d.brief.canonicalUrl || "")}`,
+    `readingTime: ${rt}`,
+    "---",
+    "",
+  ];
+  return lines.join("\n");
+}
+
 export function toMarkdown(d: Draft): string {
   const titleBlock = d.blocks.find(b => b.type === "title");
   const title = titleBlock?.content?.trim() || d.brief.topic || "Untitled";
-  const parts: string[] = [];
+  const parts: string[] = [buildFrontmatter(d)];
   if (d.headerImage.url || d.headerImage.prompt) {
     parts.push(`![${d.headerImage.alt || title}](${d.headerImage.url || "https://placehold.co/1200x630"})\n`);
   }
@@ -65,26 +114,8 @@ ${mdToHtml(toMarkdown(d))}
 }
 
 export function toMdx(d: Draft): string {
-  const titleBlock = d.blocks.find(b => b.type === "title");
-  const title = titleBlock?.content?.trim() || d.brief.topic || "Untitled";
-  const frontmatter = [
-    "---",
-    `title: "${title.replace(/"/g, '\\"')}"`,
-    `description: "${d.brief.metaDescription.replace(/"/g, '\\"')}"`,
-    d.brief.focusKeyword ? `focusKeyword: "${d.brief.focusKeyword}"` : "",
-    `categories: [${d.brief.categories.map(c => `"${c}"`).join(", ")}]`,
-    `tags: [${d.brief.tags.map(t => `"${t}"`).join(", ")}]`,
-    d.headerImage.url ? `headerImage: "${d.headerImage.url}"` : "",
-    d.headerImage.alt ? `headerImageAlt: "${d.headerImage.alt.replace(/"/g, '\\"')}"` : "",
-    `og:`,
-    `  title: "${title.replace(/"/g, '\\"')}"`,
-    `  description: "${d.brief.metaDescription.replace(/"/g, '\\"')}"`,
-    d.headerImage.url ? `  image: "${d.headerImage.url}"` : "",
-    `createdAt: "${new Date(d.createdAt).toISOString()}"`,
-    "---",
-    "",
-  ].filter(Boolean).join("\n");
-  return frontmatter + "\n" + toMarkdown(d);
+  // MDX uses the same frontmatter as Markdown; content follows directly.
+  return toMarkdown(d);
 }
 
 export function toJson(d: Draft): string {
