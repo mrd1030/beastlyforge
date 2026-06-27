@@ -8,14 +8,17 @@ import { generateArticle, humanize, streamBlock } from "@/lib/api";
 import { buildLlmPrompt } from "@/lib/exports";
 import { uid } from "@/lib/storage";
 import { getStyleInstructions } from "@/lib/styles";
+import { NICHE_COLORS } from "@/lib/templates";
 import type { Draft, Block } from "@/types";
 
 interface Props {
   draft: Draft;
   setDraft: React.Dispatch<React.SetStateAction<Draft | null>>;
+  niche: string;
 }
 
-export default function EditPreview({ draft, setDraft }: Props) {
+export default function EditPreview({ draft, setDraft, niche }: Props) {
+  const nc = NICHE_COLORS[niche] || NICHE_COLORS["Pet Care"];
   const [busy, setBusy] = useState(false);
   const [blockBusy, setBlockBusy] = useState<string>("");
   const abortRef = useRef<AbortController | null>(null);
@@ -250,10 +253,10 @@ const updateBlock = (id: string, patch: Partial<Block>) => {
       {draft.blocks.map((b, i) => (
         <motion.div key={b.id} layout
           initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2, delay: i * 0.02 }}
-          className="rounded-xl border border-border bg-card" data-testid={`edit-block-${b.id}`}>
-          <div className="flex items-center justify-between px-4 py-2.5 border-b border-border/60">
+          className={`rounded-xl border-2 ${nc.border} bg-card`} data-testid={`edit-block-${b.id}`}>
+          <div className={`flex items-center justify-between px-4 py-2.5 border-b ${nc.border} ${nc.bg}`}>
             <div className="flex items-center gap-2">
-              <span className="text-[10px] uppercase tracking-wider font-medium text-primary">{b.label || b.type}</span>
+              <span className={`text-[10px] uppercase tracking-wider font-medium ${nc.text}`}>{b.label || b.type}</span>
               <span className="text-xs text-muted-foreground">#{i + 1}</span>
             </div>
             <div className="flex gap-1">

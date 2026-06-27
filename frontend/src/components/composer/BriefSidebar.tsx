@@ -21,6 +21,8 @@ interface Props {
   leftOpen: boolean;
   setLeftOpen: (v: boolean) => void;
   onStyleChange: (sid: StyleId) => void;
+  niche: string;
+  setNiche: (v: string) => void;
 }
 
 // Stable, module-level collapsible section (must NOT be defined inside the
@@ -42,7 +44,7 @@ function Sec({ open, onToggle, k, title, children }: {
   );
 }
 
-export default function BriefSidebar({ draft, setDraft, leftOpen, setLeftOpen, onStyleChange }: Props) {
+export default function BriefSidebar({ draft, setDraft, leftOpen, setLeftOpen, onStyleChange, niche, setNiche }: Props) {
   const [customCats, setCustomCats] = useState<string[]>(loadCustomCategories());
   const [newCat, setNewCat] = useState("");
   const [newTag, setNewTag] = useState("");
@@ -50,10 +52,6 @@ export default function BriefSidebar({ draft, setDraft, leftOpen, setLeftOpen, o
   const [seoBusy, setSeoBusy] = useState(false);
   const [briefBusy, setBriefBusy] = useState(false);
   const [factsBusy, setFactsBusy] = useState(false);
-  const [niche, setNiche] = useState<string>(() => {
-    try { return JSON.parse(localStorage.getItem("bf.settings.v1") || "{}").defaultNiche || "Pet Care"; }
-    catch { return "Pet Care"; }
-  });
 
   const styles = getAllStyles();
   const nicheCategories = NICHES[niche]?.categories || NICHES["Pet Care"].categories;
