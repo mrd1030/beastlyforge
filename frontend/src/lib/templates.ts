@@ -174,7 +174,7 @@ export const NICHES: Record<string, { label: string; emoji: string; categories: 
     label: "Short Stories",
     emoji: "📖",
     categories: [
-      "Dex the Bearded Dragon", "Animal Tales", "Adventure", "Friendship",
+      "Dex the Bearded Dragon", "Otis the Bunny", "Animal Tales", "Adventure", "Friendship",
       "Mystery", "Humor", "Coming of Age", "Nature & Wildlife",
       "Heartwarming", "Slice of Life", "Fantasy", "Holiday",
     ],

@@ -173,11 +173,18 @@ const updateBlock = (id: string, patch: Partial<Block>) => {
     abortRef.current = ctrl;
     setBlockBusy(b.id);
     const t = toast.loading(`Regenerating ${b.label || b.type}…`);
+    // Build prior content from all blocks that come before this one
+    const idx = draft.blocks.findIndex(x => x.id === b.id);
+    const priorContent = draft.blocks
+      .slice(0, idx)
+      .map(x => x.content || "")
+      .filter(Boolean)
+      .join("\n\n");
     try {
       let acc = "";
       updateBlock(b.id, { content: "" });
       await streamBlock(
-        { styleId: draft.styleId, styleInstructions: getStyleInstructions(draft.styleId), brief: draft.brief, blockType: b.type, blockNote: b.note },
+        { styleId: draft.styleId, styleInstructions: getStyleInstructions(draft.styleId), brief: draft.brief, blockType: b.type, blockNote: b.note, priorContent },
         (delta) => { acc += delta; updateBlock(b.id, { content: acc }); },
         ctrl.signal,
       );

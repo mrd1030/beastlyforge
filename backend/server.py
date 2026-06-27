@@ -149,7 +149,10 @@ STYLE_SYSTEM_PROMPTS = {
         "- paragraph: a scene beat, a turning point, an interior moment. Keep narrative moving.\n"
         "- conclusion: the story's final beat — resolution, image, or quiet emotional close.\n"
         "\nDo NOT break into bullet points, headers, or 'tips' mid-story unless the brief explicitly asks for it. "
-        "This is fiction. Stay in the story world."
+        "This is fiction. Stay in the story world.\n"
+        "\nNEVER rehash, re-introduce, or restart a scene that the prior content already covered. "
+        "Each block moves the story forward. If the prior content ends mid-scene, pick up exactly there. "
+        "If a plot point is already resolved, it is done — do not circle back to it."
     ),
 }
 
@@ -171,6 +174,27 @@ BLOCK_INSTRUCTIONS = {
     "affiliate": "Write a short, friendly, honest affiliate disclosure paragraph. Mention products are personally recommended.",
     "ending": "Write the final beat of the story. No header, no label, no 'Conclusion'. Just the last moment — a quiet image, a small truth, a shift in the character. It should feel complete without announcing itself. 2-4 sentences max.",
 }
+
+
+OTIS_CHARACTER = """
+CHARACTER PROFILE — Otis the Bunny:
+- Species: Holland Lop rabbit
+- Personality: Confident, opinionated, and quietly obsessed with routine. Otis runs on a schedule
+  he invented and enforces without negotiation. He is affectionate on his own terms — he will
+  approach you when he has decided it is time, and not a moment before. Surprisingly brave for
+  something his size. Occasionally dramatic.
+- Physical: Floppy ears that frame a round, serious face. Soft grey-brown coat with a white patch
+  on his chest. Compact and low to the ground but moves fast when motivated. His nose twitches
+  constantly, cataloguing everything.
+- Home: Has claimed most of a living room through a combination of persistence and strategic
+  flopping. Has a dedicated corner with hay, a wooden chew toy he ignores, and a fleece blanket
+  he has rearranged to his exact specifications. Free-roams supervised.
+- Communication: Does not speak. Expresses himself through thumping, binkying (sudden midair
+  twists of joy), flopping dramatically onto his side, tooth-purring when content, and a slow,
+  deliberate nose-bonk when he wants attention. The narrator reads his inner world.
+- Story tone: warm, dry humor, emotionally honest. Otis takes himself seriously. The comedy
+  comes from the gap between his gravitas and the smallness of his concerns.
+"""
 
 
 DEX_CHARACTER = """
@@ -196,12 +220,13 @@ def build_system_prompt(style_id: str, brief: Dict[str, Any], style_instructions
     niche = (brief.get('niche', '') or 'General').strip()
     categories = brief.get('categories', [])
 
-    # Inject Dex's character profile for Short Stories niche when relevant
-    if niche == "Short Stories" and (
-        "Dex the Bearded Dragon" in categories
-        or "dex" in (brief.get('topic', '') or '').lower()
-    ):
-        base += DEX_CHARACTER
+    # Inject character profiles for Short Stories niche when relevant
+    topic_lower = (brief.get('topic', '') or '').lower()
+    if niche == "Short Stories":
+        if "Dex the Bearded Dragon" in categories or "dex" in topic_lower:
+            base += DEX_CHARACTER
+        if "Otis the Bunny" in categories or "otis" in topic_lower:
+            base += OTIS_CHARACTER
 
     context = (
         f"\n\nARTICLE CONTEXT:\n"
