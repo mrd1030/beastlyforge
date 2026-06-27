@@ -213,6 +213,7 @@ export const BLOCK_LIBRARY: { type: BlockType; label: string; hint: string }[] =
   { type: "resources",  label: "Resources",            hint: "Books, communities, tools" },
   { type: "references", label: "References / Sources", hint: "Credible source list" },
   { type: "affiliate",  label: "Affiliate Note",       hint: "Honest disclosure block" },
+  { type: "ending",     label: "Ending",               hint: "The story's final beat — no label, just the close" },
 ];
 
 export const DEFAULT_AFFILIATE_TEXT =
@@ -225,7 +226,7 @@ export const STARTER_BLOCKS_BY_STYLE: Record<StyleId, BlockType[]> = {
   "storyteller":            ["title", "prologue", "paragraph", "image", "paragraph", "conclusion"],
   "professional-educator":  ["title", "prologue", "paragraph", "key-facts", "table", "references", "conclusion"],
   "newsletter":             ["title", "prologue", "tips", "cta", "conclusion"],
-  "short-story":            ["title", "prologue", "paragraph", "paragraph", "paragraph", "conclusion"],
+  "short-story":            ["title", "prologue", "paragraph", "paragraph", "paragraph", "ending"],
 };
 
 export const PLACEMENT_OPTIONS = [

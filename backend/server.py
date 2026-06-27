@@ -169,6 +169,7 @@ BLOCK_INSTRUCTIONS = {
     "resources": "List 4-6 useful resources (books, sites, communities) as markdown bullets with short descriptions.",
     "references": "List 3-5 credible sources as markdown bullets. Format: - Source Name — short note on what it covers.",
     "affiliate": "Write a short, friendly, honest affiliate disclosure paragraph. Mention products are personally recommended.",
+    "ending": "Write the final beat of the story. No header, no label, no 'Conclusion'. Just the last moment — a quiet image, a small truth, a shift in the character. It should feel complete without announcing itself. 2-4 sentences max.",
 }
 
 
