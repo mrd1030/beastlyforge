@@ -7,13 +7,14 @@ export interface StyleOption {
   name: string;
   tagline: string;
   vibe: string;
+  color: string;
   custom?: boolean;
 }
 
 // Built-in styles + user-defined custom styles, in one list.
 export function getAllStyles(): StyleOption[] {
   const custom = loadCustomStyles().map(s => ({
-    id: s.id, name: s.name, tagline: s.tagline, vibe: s.vibe, custom: true,
+    id: s.id, name: s.name, tagline: s.tagline, vibe: s.vibe, color: "slate", custom: true,
   }));
   return [...WRITING_STYLES.map(s => ({ ...s, custom: false })), ...custom];
 }

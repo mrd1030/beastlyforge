@@ -157,11 +157,13 @@ BLOCK_INSTRUCTIONS = {
 def build_system_prompt(style_id: str, brief: Dict[str, Any], style_instructions: Optional[str] = None) -> str:
     base = (style_instructions or "").strip() or STYLE_SYSTEM_PROMPTS.get(style_id, STYLE_SYSTEM_PROMPTS["real-person"])
     facts = (brief.get('factsToUse', '') or '').strip()
+    niche = (brief.get('niche', '') or 'General').strip()
     context = (
         f"\n\nARTICLE CONTEXT:\n"
+        f"- Niche / content area: {niche}\n"
         f"- Topic: {brief.get('topic', '')}\n"
         f"- Target audience: {brief.get('audience', '')}\n"
-        f"- Personal angle / lived experience: {brief.get('angle', '')}\n"
+        f"- Angle / perspective: {brief.get('angle', '')}\n"
         f"- Key points to cover: {brief.get('keyPoints', '')}\n"
         f"- Focus keyword: {brief.get('focusKeyword', '')}\n"
         f"- Categories: {', '.join(brief.get('categories', []))}\n"
@@ -307,6 +309,7 @@ class LayoutSuggestIn(BaseModel):
 class BriefGenerateIn(BaseModel):
     topic: str
     styleId: str = "real-person"
+    niche: str = "General"
 
 
 # ============ ROUTES ============
@@ -591,15 +594,16 @@ async def suggest_layout(body: LayoutSuggestIn):
     return data
 
 
-async def _search_facts(topic: str) -> str:
+async def _search_facts(topic: str, niche: str = "General") -> str:
     """Run a Tavily search and return a clean bullet list of sourced facts."""
     if not TAVILY_API_KEY:
         return ""
     try:
         tavily = TavilyClient(api_key=TAVILY_API_KEY)
+        query = f"{topic} {niche} facts" if niche and niche != "General" else f"{topic} facts"
         results = await asyncio.to_thread(
             tavily.search,
-            query=f"{topic} pet care facts",
+            query=query,
             search_depth="advanced",
             max_results=5,
             include_answer=True,
@@ -626,25 +630,24 @@ async def _search_facts(topic: str) -> str:
 async def generate_brief(body: BriefGenerateIn):
     """Auto-fill all brief fields from a topic/title in one shot, with real web facts."""
     # Run web search and brief generation in parallel
-    facts_task = asyncio.create_task(_search_facts(body.topic))
+    facts_task = asyncio.create_task(_search_facts(body.topic, body.niche))
 
     system = (
-        "You are a content strategist for BeastlyFacts.com, a warm, authentic pet-care blog. "
+        f"You are a content strategist helping writers create well-structured articles on any topic. "
+        f"The writer's content niche is: {body.niche}. "
         "Given a topic/title and writing style, return a complete article brief as strict JSON. "
         "Output ONLY raw JSON with exactly these keys:\n"
         "- audience (string): 1-sentence description of who will read this\n"
         "- keyPoints (string): 4-6 bullet points (markdown list) covering what the article must address\n"
-        "- angle (string): 2-3 sentences describing a personal, lived-experience angle the writer can take\n"
+        "- angle (string): 2-3 sentences describing an honest, informed angle the writer can take\n"
         "- focusKeyword (string): a 2-4 word lowercase SEO keyword phrase\n"
         "- metaDescription (string): a warm, specific 150-160 character meta description that includes the focus keyword\n"
-        "- categories (array of strings): 1-3 relevant categories from this list only — "
-        "Amphibians, Aquatic Life, Birds, Cats, Dogs, Fun Facts, Invertebrates, Pet Care, "
-        "Product Picks, Reptiles, Small & Exotic Pets, Wild Animals, Reptile Care, Site News\n"
-        "- tags (array of strings): 3-6 lowercase hyphenated tags (e.g. 'bearded-dragon', 'gut-loading')\n"
-        "Do NOT invent statistics. Be specific to the topic. Output ONLY raw JSON, no fences, no preamble."
+        "- categories (array of strings): 1-3 relevant categories that fit this niche and topic\n"
+        "- tags (array of strings): 3-6 lowercase hyphenated tags relevant to the topic\n"
+        "Do NOT invent statistics. Be specific to the topic and niche. Output ONLY raw JSON, no fences, no preamble."
     )
     style_hint = STYLE_SYSTEM_PROMPTS.get(body.styleId, "")
-    user = f"TOPIC: {body.topic}\nWRITING STYLE CONTEXT: {style_hint[:300]}"
+    user = f"TOPIC: {body.topic}\nNICHE: {body.niche}\nWRITING STYLE CONTEXT: {style_hint[:300]}"
 
     raw, facts = await asyncio.gather(
         llm_complete(system, user, max_tokens=800),
@@ -678,7 +681,7 @@ async def generate_facts(body: BriefGenerateIn):
     """Search the web for sourced facts about a topic on demand."""
     if not TAVILY_API_KEY:
         raise HTTPException(400, "TAVILY_API_KEY not configured")
-    facts = await _search_facts(body.topic)
+    facts = await _search_facts(body.topic, body.niche)
     if not facts:
         raise HTTPException(500, "No results returned from search")
     return {"factsToUse": facts}

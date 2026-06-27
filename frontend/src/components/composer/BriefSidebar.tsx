@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Sparkles, X, Plus, Image as ImageIcon, ChevronDown, ChevronRight } from "lucide-react";
-import { CATEGORIES, PLACEMENT_OPTIONS, TYPE_OPTIONS, getAffiliateDisclosureText } from "@/lib/templates";
+import { NICHES, NICHE_KEYS, STYLE_COLORS, PLACEMENT_OPTIONS, TYPE_OPTIONS, getAffiliateDisclosureText } from "@/lib/templates";
 import { getAllStyles, getStyleInstructions } from "@/lib/styles";
 import { loadCustomCategories, saveCustomCategories, uid } from "@/lib/storage";
 import { generateBrief, generateFacts, generateImagePrompt, generateMeta, generateSeo } from "@/lib/api";
@@ -50,9 +50,14 @@ export default function BriefSidebar({ draft, setDraft, leftOpen, setLeftOpen, o
   const [seoBusy, setSeoBusy] = useState(false);
   const [briefBusy, setBriefBusy] = useState(false);
   const [factsBusy, setFactsBusy] = useState(false);
+  const [niche, setNiche] = useState<string>(() => {
+    try { return JSON.parse(localStorage.getItem("bf.settings.v1") || "{}").defaultNiche || "Pet Care"; }
+    catch { return "Pet Care"; }
+  });
 
   const styles = getAllStyles();
-  const allCats = [...CATEGORIES, ...customCats];
+  const nicheCategories = NICHES[niche]?.categories || NICHES["Pet Care"].categories;
+  const allCats = [...new Set([...nicheCategories, ...customCats])];
 
   const update = (patch: Partial<Draft>) => setDraft(prev => prev ? { ...prev, ...patch } : prev);
   const updateBrief = (patch: Partial<Draft["brief"]>) => setDraft(prev => prev ? { ...prev, brief: { ...prev.brief, ...patch } } : prev);
@@ -162,7 +167,7 @@ export default function BriefSidebar({ draft, setDraft, leftOpen, setLeftOpen, o
     setBriefBusy(true);
     const t = toast.loading("Building your brief…");
     try {
-      const r = await generateBrief({ topic: draft.brief.topic, styleId: draft.styleId });
+      const r = await generateBrief({ topic: draft.brief.topic, styleId: draft.styleId, niche });
       setDraft(prev => {
         if (!prev) return prev;
         // Merge suggested categories with any the user already picked.
@@ -196,7 +201,7 @@ export default function BriefSidebar({ draft, setDraft, leftOpen, setLeftOpen, o
     setFactsBusy(true);
     const t = toast.loading("Searching the web for facts…");
     try {
-      const r = await generateFacts({ topic: draft.brief.topic });
+      const r = await generateFacts({ topic: draft.brief.topic, niche });
       updateBrief({ factsToUse: r.factsToUse });
       toast.success("Facts sourced", { id: t, description: "Review and remove anything that doesn't apply." });
     } catch (e: any) {
@@ -220,24 +225,28 @@ export default function BriefSidebar({ draft, setDraft, leftOpen, setLeftOpen, o
 
         <Sec open={openSection === "style"} onToggle={() => toggle("style")} k="style" title="Writing Style">
           <div className="grid grid-cols-1 gap-2">
-            {styles.map(s => (
-              <button key={s.id}
-                onClick={() => onStyleChange(s.id)}
-                data-testid={`style-card-${s.id}`}
-                className={`text-left p-3 rounded-xl border transition-all ${
-                  draft.styleId === s.id
-                    ? "border-primary bg-primary/5 ring-2 ring-primary/30"
-                    : "border-border hover:border-primary/40 bg-card"
-                }`}>
-                <div className="flex items-center justify-between">
-                  <div className="font-medium text-sm">{s.name}</div>
-                  {s.custom
-                    ? <Badge variant="secondary" className="text-[9px] px-1.5 py-0">Custom</Badge>
-                    : draft.styleId === s.id && <Sparkles className="w-3.5 h-3.5 text-primary" />}
-                </div>
-                <div className="text-xs text-muted-foreground mt-0.5">{s.tagline}</div>
-              </button>
-            ))}
+            {styles.map(s => {
+              const c = STYLE_COLORS[s.color] || STYLE_COLORS["amber"];
+              const active = draft.styleId === s.id;
+              return (
+                <button key={s.id}
+                  onClick={() => onStyleChange(s.id)}
+                  data-testid={`style-card-${s.id}`}
+                  className={`text-left p-3 rounded-xl border-2 transition-all ${
+                    active
+                      ? `${c.border} ${c.bg} ring-2 ${c.ring}`
+                      : "border-border hover:border-primary/40 bg-card"
+                  }`}>
+                  <div className="flex items-center justify-between">
+                    <div className={`font-medium text-sm ${active ? c.text : ""}`}>{s.name}</div>
+                    {s.custom
+                      ? <Badge variant="secondary" className="text-[9px] px-1.5 py-0">Custom</Badge>
+                      : active && <Sparkles className={`w-3.5 h-3.5 ${c.text}`} />}
+                  </div>
+                  <div className="text-xs text-muted-foreground mt-0.5">{s.tagline}</div>
+                </button>
+              );
+            })}
           </div>
         </Sec>
 
@@ -338,6 +347,19 @@ export default function BriefSidebar({ draft, setDraft, leftOpen, setLeftOpen, o
         </Sec>
 
         <Sec open={openSection === "categories"} onToggle={() => toggle("categories")} k="categories" title="Categories">
+          <div>
+            <Label>Topic Niche</Label>
+            <Select value={niche} onValueChange={v => { setNiche(v); updateBrief({ categories: [] }); }} >
+              <SelectTrigger data-testid="niche-select">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {NICHE_KEYS.map(k => (
+                  <SelectItem key={k} value={k}>{NICHES[k].emoji} {NICHES[k].label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
           <div className="flex flex-wrap gap-1.5" data-testid="categories-chip-list">
             {allCats.map(c => {
               const active = draft.brief.categories.includes(c);

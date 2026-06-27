@@ -14,6 +14,7 @@ export interface AppSettings {
   defaultStyleId: string;
   defaultCategories: string[];
   defaultAffiliateEnabled: boolean;
+  defaultNiche: string;
 }
 
 export type BlockType =
