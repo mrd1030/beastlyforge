@@ -31,14 +31,14 @@ export default function Dashboard() {
         className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
         <div className="lg:col-span-7 space-y-5">
           <Badge variant="secondary" className="bg-secondary/15 text-secondary border-secondary/20 rounded-full px-3 py-1" data-testid="hero-pill">
-            For BeastlyFacts.com creators
+            AI-powered article builder
           </Badge>
           <h1 className="font-display text-4xl sm:text-5xl lg:text-6xl tracking-tight leading-[1.05]">
-            Write pet-care articles<br />that actually sound{" "}
+            Write articles<br />that actually sound{" "}
             <span className="italic text-primary">like you.</span>
           </h1>
           <p className="text-base sm:text-lg text-muted-foreground max-w-xl leading-relaxed">
-            A calm, thoughtful workspace for authentic pet-care articles and newsletters.
+            A calm, thoughtful workspace for authentic articles and newsletters — any topic, any niche.
             Drag-and-drop layouts, real-person writing styles, and one-click exports for
             your blog, newsletter, and socials.
           </p>
@@ -57,10 +57,10 @@ export default function Dashboard() {
             <div className="absolute -inset-6 bg-primary/10 blur-3xl rounded-full" />
             <div className="relative rounded-2xl border border-border bg-card p-6 shadow-xl">
               <div className="text-xs uppercase tracking-[0.2em] text-muted-foreground mb-3">Today's pick</div>
-              <div className="font-display text-2xl leading-tight mb-2">"Why my bearded dragon stopped eating — and what actually worked"</div>
+              <div className="font-display text-2xl leading-tight mb-2">"The honest guide to starting something new — without overthinking it"</div>
               <div className="text-sm text-muted-foreground mb-4">Real Person — Lived It · 6 blocks · 4 min read</div>
               <div className="flex flex-wrap gap-1.5">
-                {["Reptiles", "Reptile Care", "Pet Care"].map(c => (
+                {["Lifestyle", "Productivity", "Personal Growth"].map(c => (
                   <span key={c} className="text-xs px-2.5 py-1 rounded-full bg-muted text-muted-foreground">{c}</span>
                 ))}
               </div>
@@ -85,7 +85,7 @@ export default function Dashboard() {
             <CardContent className="p-10 text-center">
               <BookOpen className="w-10 h-10 mx-auto text-muted-foreground/60 mb-3" />
               <div className="font-display text-xl mb-1">No drafts yet</div>
-              <p className="text-sm text-muted-foreground mb-5">Start by writing something honest about a pet you love.</p>
+              <p className="text-sm text-muted-foreground mb-5">Start by writing your first article — pick any topic, any niche.</p>
               <Button onClick={onNew} className="bg-primary hover:bg-primary/90 text-primary-foreground" data-testid="empty-new-article-btn">
                 <Plus className="w-4 h-4 mr-2" /> New article
               </Button>

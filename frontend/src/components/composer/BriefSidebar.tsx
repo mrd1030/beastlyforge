@@ -223,6 +223,21 @@ export default function BriefSidebar({ draft, setDraft, leftOpen, setLeftOpen, o
       </div>
       <div className="bf-scroll overflow-y-auto max-h-[calc(100vh-9rem)]">
 
+        {/* Niche picker — always visible at top */}
+        <div className="px-4 py-3 border-b border-border/60">
+          <Label className="text-xs uppercase tracking-[0.18em] text-muted-foreground font-medium mb-2 block">Topic Niche</Label>
+          <Select value={niche} onValueChange={v => { setNiche(v); updateBrief({ categories: [] }); }}>
+            <SelectTrigger data-testid="niche-select" className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {NICHE_KEYS.map(k => (
+                <SelectItem key={k} value={k}>{NICHES[k].emoji} {NICHES[k].label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
         <Sec open={openSection === "style"} onToggle={() => toggle("style")} k="style" title="Writing Style">
           <div className="grid grid-cols-1 gap-2">
             {styles.map(s => {
@@ -347,19 +362,6 @@ export default function BriefSidebar({ draft, setDraft, leftOpen, setLeftOpen, o
         </Sec>
 
         <Sec open={openSection === "categories"} onToggle={() => toggle("categories")} k="categories" title="Categories">
-          <div>
-            <Label>Topic Niche</Label>
-            <Select value={niche} onValueChange={v => { setNiche(v); updateBrief({ categories: [] }); }} >
-              <SelectTrigger data-testid="niche-select">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {NICHE_KEYS.map(k => (
-                  <SelectItem key={k} value={k}>{NICHES[k].emoji} {NICHES[k].label}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
           <div className="flex flex-wrap gap-1.5" data-testid="categories-chip-list">
             {allCats.map(c => {
               const active = draft.brief.categories.includes(c);
