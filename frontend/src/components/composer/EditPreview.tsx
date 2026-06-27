@@ -1,14 +1,13 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
-import { Sparkles, RefreshCw, Wand2, Loader2, Radio } from "lucide-react";
+import { Sparkles, RefreshCw, Wand2, Loader2, Radio, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { generateArticle, humanize, streamBlock } from "@/lib/api";
 import { buildLlmPrompt } from "@/lib/exports";
 import { uid } from "@/lib/storage";
 import { getStyleInstructions } from "@/lib/styles";
-import { DEFAULT_AFFILIATE_TEXT } from "@/lib/templates";
 import type { Draft, Block } from "@/types";
 
 interface Props {
@@ -19,6 +18,12 @@ interface Props {
 export default function EditPreview({ draft, setDraft }: Props) {
   const [busy, setBusy] = useState(false);
   const [blockBusy, setBlockBusy] = useState<string>("");
+  const abortRef = useRef<AbortController | null>(null);
+
+  // Cancel any in-flight stream when the component unmounts.
+  useEffect(() => () => { abortRef.current?.abort(); }, []);
+
+  const cancelStream = () => { abortRef.current?.abort(); abortRef.current = null; };
 
 const updateBlock = (id: string, patch: Partial<Block>) => {
   setDraft(prev => {
@@ -94,26 +99,73 @@ const updateBlock = (id: string, patch: Partial<Block>) => {
 
   const onStreamAll = async () => {
     if (draft.blocks.length === 0) { toast.error("Add some blocks first"); return; }
+    cancelStream();
+    const ctrl = new AbortController();
+    abortRef.current = ctrl;
     setBusy(true);
     const t = toast.loading("Streaming your article, block by block…");
+
+    // Mirror the affiliate-injection logic from onGenerateAll so both paths behave identically.
+    let blocks = [...draft.blocks];
+    if (draft.affiliate.enabled) {
+      const hasAff = blocks.some(b => b.type === "affiliate");
+      if (!hasAff) {
+        const aff: Block = { id: uid("blk"), type: "affiliate", label: "Affiliate Note", content: draft.affiliate.text };
+        if (draft.affiliate.placement === "after-title") {
+          const idx = blocks.findIndex(b => b.type === "title");
+          blocks.splice(idx >= 0 ? idx + 1 : 0, 0, aff);
+        } else if (draft.affiliate.placement === "bottom-section") {
+          blocks.push(aff);
+        }
+        // Persist the injected block into draft state so it shows up in the editor.
+        setDraft(p => p ? { ...p, blocks } : p);
+      }
+    }
+
+    let streamed = 0;
+    let failed = 0;
     try {
-      for (const b of draft.blocks) {
+      for (const b of blocks) {
+        if (ctrl.signal.aborted) break;
         setBlockBusy(b.id);
         let acc = "";
         updateBlock(b.id, { content: "" });
-        await streamBlock(
-          { styleId: draft.styleId, styleInstructions: getStyleInstructions(draft.styleId), brief: draft.brief, blockType: b.type, blockNote: b.note },
-          (delta) => { acc += delta; updateBlock(b.id, { content: acc }); }
-        );
+        try {
+          await streamBlock(
+            { styleId: draft.styleId, styleInstructions: getStyleInstructions(draft.styleId), brief: draft.brief, blockType: b.type, blockNote: b.note },
+            (delta) => { acc += delta; updateBlock(b.id, { content: acc }); },
+            ctrl.signal,
+          );
+          streamed++;
+        } catch (blockErr: any) {
+          if (ctrl.signal.aborted) break;
+          failed++;
+          // Leave the block with whatever partial content streamed; show inline indicator.
+          updateBlock(b.id, { content: acc || `⚠️ Generation failed: ${blockErr?.message || "unknown error"}` });
+        }
       }
-      snapshotVersion("Live streamed generation");
-      toast.success("Article streamed", { id: t, description: `${draft.blocks.length} blocks written live.` });
-    } catch (e: any) {
-      toast.error("Streaming failed", { id: t, description: e?.message || "Try again." });
-    } finally { setBusy(false); setBlockBusy(""); }
+    } finally {
+      abortRef.current = null;
+      setBusy(false);
+      setBlockBusy("");
+    }
+
+    if (ctrl.signal.aborted) {
+      toast.info("Streaming cancelled", { id: t });
+      return;
+    }
+    snapshotVersion("Live streamed generation");
+    if (failed === 0) {
+      toast.success("Article streamed", { id: t, description: `${streamed} blocks written live.` });
+    } else {
+      toast.warning("Streaming finished with errors", { id: t, description: `${streamed} succeeded, ${failed} failed.` });
+    }
   };
 
   const onRegenBlock = async (b: Block) => {
+    cancelStream();
+    const ctrl = new AbortController();
+    abortRef.current = ctrl;
     setBlockBusy(b.id);
     const t = toast.loading(`Regenerating ${b.label || b.type}…`);
     try {
@@ -121,11 +173,14 @@ const updateBlock = (id: string, patch: Partial<Block>) => {
       updateBlock(b.id, { content: "" });
       await streamBlock(
         { styleId: draft.styleId, styleInstructions: getStyleInstructions(draft.styleId), brief: draft.brief, blockType: b.type, blockNote: b.note },
-        (delta) => { acc += delta; updateBlock(b.id, { content: acc }); }
+        (delta) => { acc += delta; updateBlock(b.id, { content: acc }); },
+        ctrl.signal,
       );
       toast.success("Regenerated", { id: t });
-    } catch (e: any) { toast.error("Failed", { id: t, description: e?.message }); }
-    finally { setBlockBusy(""); }
+    } catch (e: any) {
+      if (ctrl.signal.aborted) { toast.dismiss(t); return; }
+      toast.error("Failed", { id: t, description: e?.message });
+    } finally { abortRef.current = null; setBlockBusy(""); }
   };
 
   const onHumanizeBlock = async (b: Block) => {
@@ -184,6 +239,11 @@ const updateBlock = (id: string, patch: Partial<Block>) => {
           <Button onClick={onHumanizeAll} disabled={busy} size="sm" variant="outline" data-testid="polish-all-btn">
             <Wand2 className="w-4 h-4 mr-1.5" /> Polish Entire Article
           </Button>
+          {busy && (
+            <Button onClick={cancelStream} size="sm" variant="ghost" className="text-destructive" data-testid="cancel-stream-btn">
+              <X className="w-4 h-4 mr-1.5" /> Cancel
+            </Button>
+          )}
         </div>
       </div>
 

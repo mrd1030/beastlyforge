@@ -11,7 +11,8 @@ import { Sparkles, X, Plus, Image as ImageIcon, ChevronDown, ChevronRight } from
 import { CATEGORIES, PLACEMENT_OPTIONS, TYPE_OPTIONS, getAffiliateDisclosureText } from "@/lib/templates";
 import { getAllStyles, getStyleInstructions } from "@/lib/styles";
 import { loadCustomCategories, saveCustomCategories, uid } from "@/lib/storage";
-import { generateImagePrompt, generateMeta, generateSeo } from "@/lib/api";
+import { generateBrief, generateImagePrompt, generateMeta, generateSeo } from "@/lib/api";
+import { Loader2 } from "lucide-react";
 import type { Draft, StyleId, Block } from "@/types";
 
 interface Props {
@@ -47,6 +48,7 @@ export default function BriefSidebar({ draft, setDraft, leftOpen, setLeftOpen, o
   const [newTag, setNewTag] = useState("");
   const [openSection, setOpenSection] = useState<string>("style");
   const [seoBusy, setSeoBusy] = useState(false);
+  const [briefBusy, setBriefBusy] = useState(false);
 
   const styles = getAllStyles();
   const allCats = [...CATEGORIES, ...customCats];
@@ -55,16 +57,12 @@ export default function BriefSidebar({ draft, setDraft, leftOpen, setLeftOpen, o
   const updateBrief = (patch: Partial<Draft["brief"]>) => setDraft(prev => prev ? { ...prev, brief: { ...prev.brief, ...patch } } : prev);
   const updateAffiliate = (patch: Partial<Draft["affiliate"]>) => setDraft(prev => prev ? { ...prev, affiliate: { ...prev.affiliate, ...patch } } : prev);
   const updateBlock = (id: string, patch: Partial<Block>) => {
-  setDraft(prev => {
-    if (!prev) return prev;
-    return {
-      ...prev,
-      blocks: prev.blocks.map(b =>
-        b.id === id ? { ...b, ...patch } : b
-      )
-    };
-  });
-};
+    setDraft(prev => {
+      if (!prev) return prev;
+      return { ...prev, blocks: prev.blocks.map(b => b.id === id ? { ...b, ...patch } : b) };
+    });
+  };
+
   const setAffiliateEnabled = (enabled: boolean) => {
   updateAffiliate({ enabled });
 
@@ -158,6 +156,39 @@ export default function BriefSidebar({ draft, setDraft, leftOpen, setLeftOpen, o
     finally { setSeoBusy(false); }
   };
 
+  const onGenerateBrief = async () => {
+    if (!draft.brief.topic.trim()) { toast.error("Enter a topic first"); return; }
+    setBriefBusy(true);
+    const t = toast.loading("Building your brief…");
+    try {
+      const r = await generateBrief({ topic: draft.brief.topic, styleId: draft.styleId });
+      setDraft(prev => {
+        if (!prev) return prev;
+        // Merge suggested categories with any the user already picked.
+        const mergedCats = [...new Set([...prev.brief.categories, ...r.categories])];
+        const mergedTags = [...new Set([...prev.brief.tags, ...r.tags])];
+        return {
+          ...prev,
+          brief: {
+            ...prev.brief,
+            audience:        r.audience        || prev.brief.audience,
+            keyPoints:       r.keyPoints       || prev.brief.keyPoints,
+            angle:           r.angle           || prev.brief.angle,
+            focusKeyword:    r.focusKeyword    || prev.brief.focusKeyword,
+            metaDescription: r.metaDescription || prev.brief.metaDescription,
+            categories:      mergedCats,
+            tags:            mergedTags,
+          },
+        };
+      });
+      // Automatically open the brief section so the user can see what filled in.
+      setOpenSection("brief");
+      toast.success("Brief generated", { id: t, description: "All fields filled — tweak anything that doesn't feel right." });
+    } catch (e: any) {
+      toast.error("Failed to generate brief", { id: t, description: e?.message });
+    } finally { setBriefBusy(false); }
+  };
+
   const metaLen = draft.brief.metaDescription.length;
   const metaOk = metaLen >= 150 && metaLen <= 160;
   const toggle = (k: string) => setOpenSection(prev => prev === k ? "" : k);
@@ -200,6 +231,18 @@ export default function BriefSidebar({ draft, setDraft, leftOpen, setLeftOpen, o
             <Label htmlFor="topic">Topic / Working Title</Label>
             <Input id="topic" value={draft.brief.topic} onChange={e => updateBrief({ topic: e.target.value })} placeholder="e.g. First-week kitten care" data-testid="brief-topic-input" />
           </div>
+          <Button
+            variant="outline"
+            size="sm"
+            className="w-full"
+            onClick={onGenerateBrief}
+            disabled={briefBusy || !draft.brief.topic.trim()}
+            data-testid="generate-brief-btn"
+          >
+            {briefBusy
+              ? <><Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> Building brief…</>
+              : <><Sparkles className="w-3.5 h-3.5 mr-1.5" /> Generate full brief from topic</>}
+          </Button>
           <div>
             <Label htmlFor="audience">Target Audience</Label>
             <Input id="audience" value={draft.brief.audience} onChange={e => updateBrief({ audience: e.target.value })} placeholder="New cat parents" data-testid="brief-audience-input" />

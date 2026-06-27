@@ -55,6 +55,19 @@ export async function suggestLayout(payload: any) {
   return data;
 }
 
+export async function generateBrief(payload: { topic: string; styleId: string }): Promise<{
+  audience: string;
+  keyPoints: string;
+  angle: string;
+  focusKeyword: string;
+  metaDescription: string;
+  categories: string[];
+  tags: string[];
+}> {
+  const { data } = await client.post("/generate/brief", payload);
+  return data;
+}
+
 export async function sendEmail(payload: { recipient_email: string; subject: string; html_content: string }) {
   const { data } = await client.post("/send-email", payload);
   return data;

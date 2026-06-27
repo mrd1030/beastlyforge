@@ -14,6 +14,7 @@ from typing import Optional, List, Dict, Any
 import uuid
 from datetime import datetime, timezone
 
+import anthropic as anthropic_sdk
 from emergentintegrations.llm.chat import LlmChat, UserMessage, TextDelta, StreamDone
 
 ROOT_DIR = Path(__file__).parent
@@ -24,10 +25,15 @@ mongo_url = os.environ['MONGO_URL']
 client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ['DB_NAME']]
 
+ANTHROPIC_API_KEY = os.environ.get('ANTHROPIC_API_KEY', '')
 EMERGENT_LLM_KEY = os.environ.get('EMERGENT_LLM_KEY', '')
 RESEND_API_KEY = os.environ.get('RESEND_API_KEY', '')
 SENDER_EMAIL = os.environ.get('SENDER_EMAIL', '')
-DEFAULT_MODEL = ("anthropic", "claude-sonnet-4-5-20250929")
+CLAUDE_MODEL = os.environ.get('CLAUDE_MODEL', 'claude-sonnet-4-6')
+DEFAULT_MODEL = ("anthropic", "claude-sonnet-4-5-20250929")  # used only when falling back to emergentintegrations
+
+# Prefer direct Anthropic key; fall back to emergentintegrations proxy.
+USE_ANTHROPIC_DIRECT = bool(ANTHROPIC_API_KEY)
 
 app = FastAPI(title="BeastlyForge API")
 api_router = APIRouter(prefix="/api")
@@ -125,8 +131,22 @@ def build_system_prompt(style_id: str, brief: Dict[str, Any], style_instructions
 
 
 async def llm_complete(system: str, user_text: str, max_tokens: int = 2000) -> str:
+    if USE_ANTHROPIC_DIRECT:
+        try:
+            aclient = anthropic_sdk.AsyncAnthropic(api_key=ANTHROPIC_API_KEY)
+            msg = await aclient.messages.create(
+                model=CLAUDE_MODEL,
+                max_tokens=max_tokens,
+                system=system,
+                messages=[{"role": "user", "content": user_text}],
+            )
+            return msg.content[0].text
+        except Exception as e:
+            logger.exception("Anthropic API call failed")
+            raise HTTPException(500, f"Anthropic error: {str(e)}")
+    # Fallback: emergentintegrations proxy
     if not EMERGENT_LLM_KEY:
-        raise HTTPException(500, "EMERGENT_LLM_KEY not configured")
+        raise HTTPException(500, "No LLM key configured. Set ANTHROPIC_API_KEY or EMERGENT_LLM_KEY.")
     session_id = str(uuid.uuid4())
     chat = LlmChat(
         api_key=EMERGENT_LLM_KEY,
@@ -135,7 +155,6 @@ async def llm_complete(system: str, user_text: str, max_tokens: int = 2000) -> s
     ).with_model(*DEFAULT_MODEL)
     try:
         result = await chat.send_message(UserMessage(text=user_text))
-        # send_message returns the full string
         return result if isinstance(result, str) else str(result)
     except Exception as e:
         logger.exception("LLM call failed")
@@ -223,6 +242,11 @@ class LayoutSuggestIn(BaseModel):
     styleId: str = "real-person"
 
 
+class BriefGenerateIn(BaseModel):
+    topic: str
+    styleId: str = "real-person"
+
+
 # ============ ROUTES ============
 @api_router.get("/")
 async def root():
@@ -246,20 +270,31 @@ async def generate_block_stream(body: GenerateBlockIn):
     user = f"BLOCK TYPE: {body.blockType}\nLENGTH: {body.targetLength}\nNOTE: {body.blockNote or '(none)'}\n\n{instr}"
 
     async def event_gen():
-        if not EMERGENT_LLM_KEY:
-            yield f"data: {json.dumps({'error': 'EMERGENT_LLM_KEY not configured'})}\n\n"
-            return
-        chat = LlmChat(
-            api_key=EMERGENT_LLM_KEY,
-            session_id=str(uuid.uuid4()),
-            system_message=system,
-        ).with_model(*DEFAULT_MODEL)
         try:
-            async for ev in chat.stream_message(UserMessage(text=user)):
-                if isinstance(ev, TextDelta):
-                    yield f"data: {json.dumps({'delta': ev.content})}\n\n"
-                elif isinstance(ev, StreamDone):
-                    break
+            if USE_ANTHROPIC_DIRECT:
+                aclient = anthropic_sdk.AsyncAnthropic(api_key=ANTHROPIC_API_KEY)
+                async with aclient.messages.stream(
+                    model=CLAUDE_MODEL,
+                    max_tokens=1500,
+                    system=system,
+                    messages=[{"role": "user", "content": user}],
+                ) as stream:
+                    async for text in stream.text_stream:
+                        yield f"data: {json.dumps({'delta': text})}\n\n"
+            else:
+                if not EMERGENT_LLM_KEY:
+                    yield f"data: {json.dumps({'error': 'No LLM key configured. Set ANTHROPIC_API_KEY or EMERGENT_LLM_KEY.'})}\n\n"
+                    return
+                chat = LlmChat(
+                    api_key=EMERGENT_LLM_KEY,
+                    session_id=str(uuid.uuid4()),
+                    system_message=system,
+                ).with_model(*DEFAULT_MODEL)
+                async for ev in chat.stream_message(UserMessage(text=user)):
+                    if isinstance(ev, TextDelta):
+                        yield f"data: {json.dumps({'delta': ev.content})}\n\n"
+                    elif isinstance(ev, StreamDone):
+                        break
         except Exception as e:
             logger.exception("Stream failed")
             yield f"data: {json.dumps({'error': str(e)})}\n\n"
@@ -298,7 +333,7 @@ async def generate_article(body: dict):
         "BLOCKS:\n" + "\n".join(plan_lines) +
         "\n\nJSON FORMAT EXAMPLE:\n{\"block-id-1\": \"...content...\", \"block-id-2\": \"...content...\"}"
     )
-    raw = await llm_complete(system, user, max_tokens=6000)
+    raw = await llm_complete(system, user, max_tokens=8000)
     raw = raw.strip()
     if raw.startswith("```"):
         raw = raw.strip("`")
@@ -492,6 +527,49 @@ async def suggest_layout(body: LayoutSuggestIn):
         except Exception:
             raise HTTPException(500, "Failed to parse model output")
     return data
+
+
+@api_router.post("/generate/brief")
+async def generate_brief(body: BriefGenerateIn):
+    """Auto-fill all brief fields from a topic/title in one shot."""
+    system = (
+        "You are a content strategist for BeastlyFacts.com, a warm, authentic pet-care blog. "
+        "Given a topic/title and writing style, return a complete article brief as strict JSON. "
+        "Output ONLY raw JSON with exactly these keys:\n"
+        "- audience (string): 1-sentence description of who will read this\n"
+        "- keyPoints (string): 4-6 bullet points (markdown list) covering what the article must address\n"
+        "- angle (string): 2-3 sentences describing a personal, lived-experience angle the writer can take\n"
+        "- focusKeyword (string): a 2-4 word lowercase SEO keyword phrase\n"
+        "- metaDescription (string): a warm, specific 150-160 character meta description that includes the focus keyword\n"
+        "- categories (array of strings): 1-3 relevant categories from this list only — "
+        "Amphibians, Aquatic Life, Birds, Cats, Dogs, Fun Facts, Invertebrates, Pet Care, "
+        "Product Picks, Reptiles, Small & Exotic Pets, Wild Animals, Reptile Care, Site News\n"
+        "- tags (array of strings): 3-6 lowercase hyphenated tags (e.g. 'bearded-dragon', 'gut-loading')\n"
+        "Do NOT invent statistics. Be specific to the topic. Output ONLY raw JSON, no fences, no preamble."
+    )
+    style_hint = STYLE_SYSTEM_PROMPTS.get(body.styleId, "")
+    user = f"TOPIC: {body.topic}\nWRITING STYLE CONTEXT: {style_hint[:300]}"
+    raw = await llm_complete(system, user, max_tokens=800)
+    raw = raw.strip().strip("`")
+    if raw.lower().startswith("json"):
+        raw = raw[4:].strip()
+    try:
+        data = json.loads(raw)
+    except Exception:
+        try:
+            start = raw.find("{"); end = raw.rfind("}")
+            data = json.loads(raw[start:end+1])
+        except Exception:
+            raise HTTPException(500, "Failed to parse brief output")
+    return {
+        "audience": str(data.get("audience", "")).strip(),
+        "keyPoints": str(data.get("keyPoints", "")).strip(),
+        "angle": str(data.get("angle", "")).strip(),
+        "focusKeyword": str(data.get("focusKeyword", "")).strip(),
+        "metaDescription": str(data.get("metaDescription", "")).strip().strip('"'),
+        "categories": [str(c) for c in data.get("categories", []) if isinstance(c, str)],
+        "tags": [str(t).lower().replace(" ", "-") for t in data.get("tags", []) if isinstance(t, str)],
+    }
 
 
 @api_router.post("/send-email")
