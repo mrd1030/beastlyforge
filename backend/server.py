@@ -22,7 +22,8 @@ except ImportError:
     _HAS_EMERGENT = False
 
 ROOT_DIR = Path(__file__).parent
-load_dotenv(ROOT_DIR / '.env')
+load_dotenv(ROOT_DIR / '.env')          # backend/.env (legacy)
+load_dotenv(ROOT_DIR.parent / '.env')   # root .env (takes precedence)
 
 # MongoDB
 mongo_url = os.environ['MONGO_URL']
