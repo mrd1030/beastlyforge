@@ -11,7 +11,7 @@ import { Sparkles, X, Plus, Image as ImageIcon, ChevronDown, ChevronRight } from
 import { CATEGORIES, PLACEMENT_OPTIONS, TYPE_OPTIONS, getAffiliateDisclosureText } from "@/lib/templates";
 import { getAllStyles, getStyleInstructions } from "@/lib/styles";
 import { loadCustomCategories, saveCustomCategories, uid } from "@/lib/storage";
-import { generateBrief, generateImagePrompt, generateMeta, generateSeo } from "@/lib/api";
+import { generateBrief, generateFacts, generateImagePrompt, generateMeta, generateSeo } from "@/lib/api";
 import { Loader2 } from "lucide-react";
 import type { Draft, StyleId, Block } from "@/types";
 
@@ -49,6 +49,7 @@ export default function BriefSidebar({ draft, setDraft, leftOpen, setLeftOpen, o
   const [openSection, setOpenSection] = useState<string>("style");
   const [seoBusy, setSeoBusy] = useState(false);
   const [briefBusy, setBriefBusy] = useState(false);
+  const [factsBusy, setFactsBusy] = useState(false);
 
   const styles = getAllStyles();
   const allCats = [...CATEGORIES, ...customCats];
@@ -190,6 +191,19 @@ export default function BriefSidebar({ draft, setDraft, leftOpen, setLeftOpen, o
     } finally { setBriefBusy(false); }
   };
 
+  const onGenerateFacts = async () => {
+    if (!draft.brief.topic.trim()) { toast.error("Add a topic first"); return; }
+    setFactsBusy(true);
+    const t = toast.loading("Searching the web for facts…");
+    try {
+      const r = await generateFacts({ topic: draft.brief.topic });
+      updateBrief({ factsToUse: r.factsToUse });
+      toast.success("Facts sourced", { id: t, description: "Review and remove anything that doesn't apply." });
+    } catch (e: any) {
+      toast.error("Search failed", { id: t, description: e?.message });
+    } finally { setFactsBusy(false); }
+  };
+
   const metaLen = draft.brief.metaDescription.length;
   const metaOk = metaLen >= 150 && metaLen <= 160;
   const toggle = (k: string) => setOpenSection(prev => prev === k ? "" : k);
@@ -278,6 +292,18 @@ export default function BriefSidebar({ draft, setDraft, leftOpen, setLeftOpen, o
           <p className="text-xs text-muted-foreground -mt-1">
             Paste verified facts, numbers, breed/species details, vet notes or product specs. The AI treats these as authoritative and avoids inventing other specifics.
           </p>
+          <Button
+            variant="outline"
+            size="sm"
+            className="w-full"
+            onClick={onGenerateFacts}
+            disabled={factsBusy || !draft.brief.topic.trim()}
+            data-testid="generate-facts-btn"
+          >
+            {factsBusy
+              ? <><Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> Searching the web…</>
+              : <><Sparkles className="w-3.5 h-3.5 mr-1.5" /> Generate with AI</>}
+          </Button>
           <Textarea rows={6} value={draft.brief.factsToUse} onChange={e => updateBrief({ factsToUse: e.target.value })}
             placeholder={"- Bearded dragons need UVB 10–12 hrs/day\n- Basking temp 95–110°F\n- My vet recommended calcium dusting 3x/week"}
             data-testid="brief-facts-input" />

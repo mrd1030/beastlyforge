@@ -620,6 +620,17 @@ async def generate_brief(body: BriefGenerateIn):
     }
 
 
+@api_router.post("/generate/facts")
+async def generate_facts(body: BriefGenerateIn):
+    """Search the web for sourced facts about a topic on demand."""
+    if not TAVILY_API_KEY:
+        raise HTTPException(400, "TAVILY_API_KEY not configured")
+    facts = await _search_facts(body.topic)
+    if not facts:
+        raise HTTPException(500, "No results returned from search")
+    return {"factsToUse": facts}
+
+
 @api_router.post("/send-email")
 async def send_email(request: EmailRequest):
     if not RESEND_API_KEY or not SENDER_EMAIL:

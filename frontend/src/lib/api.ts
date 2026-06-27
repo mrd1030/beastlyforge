@@ -55,6 +55,11 @@ export async function suggestLayout(payload: any) {
   return data;
 }
 
+export async function generateFacts(payload: { topic: string }): Promise<{ factsToUse: string }> {
+  const { data } = await client.post("/generate/facts", payload);
+  return data;
+}
+
 export async function generateBrief(payload: { topic: string; styleId: string }): Promise<{
   audience: string;
   keyPoints: string;
