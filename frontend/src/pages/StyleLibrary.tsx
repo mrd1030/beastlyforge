@@ -4,7 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { getAllStyles } from "@/lib/styles";
 import { STYLE_COLORS } from "@/lib/templates";
-import { Sparkles, Heart, ShieldCheck, BookOpen, GraduationCap, Mail, Settings as SettingsIcon } from "lucide-react";
+import { Sparkles, Heart, ShieldCheck, BookOpen, GraduationCap, Mail, Feather, Settings as SettingsIcon } from "lucide-react";
 
 const ICONS: Record<string, any> = {
   "real-person": Heart,
@@ -13,6 +13,7 @@ const ICONS: Record<string, any> = {
   "storyteller": BookOpen,
   "professional-educator": GraduationCap,
   "newsletter": Mail,
+  "short-story": Feather,
 };
 
 const EXAMPLES: Record<string, string> = {
@@ -22,6 +23,7 @@ const EXAMPLES: Record<string, string> = {
   "storyteller": "\"It was the kind of summer morning where the dew sticks to your shins. I found him under the porch — a tiny tortoise no bigger than my palm.\"",
   "professional-educator": "\"Bearded dragons are diurnal reptiles requiring UVB exposure. In simpler terms: they need real sunlight or a special bulb that mimics it — and the difference matters more than most guides let on.\"",
   "newsletter": "\"Hi friends — three quick reads for you this week. Settle in with your tea and let's get into it.\"",
+  "short-story": "\"Dex noticed the strawberry before anyone put it in his bowl. He'd been tracking it — a slow, deliberate swivel of the head — since it came out of the fridge.\"",
 };
 
 export default function StyleLibrary() {

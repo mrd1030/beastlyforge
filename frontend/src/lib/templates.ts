@@ -43,6 +43,13 @@ export const WRITING_STYLES: { id: StyleId; name: string; tagline: string; vibe:
     vibe: "Inbox-perfect writing.",
     color: "emerald",
   },
+  {
+    id: "short-story",
+    name: "Short Story",
+    tagline: "A full narrative arc in miniature — character, tension, payoff.",
+    vibe: "Immersive. Scene-driven. Emotionally true.",
+    color: "indigo",
+  },
 ];
 
 // Color tokens per style — used in sidebar + style library
@@ -88,6 +95,13 @@ export const STYLE_COLORS: Record<string, { bg: string; border: string; text: st
     text: "text-emerald-600 dark:text-emerald-400",
     ring: "ring-emerald-500/30",
     badge: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300",
+  },
+  indigo: {
+    bg: "bg-indigo-500/10",
+    border: "border-indigo-500/50",
+    text: "text-indigo-600 dark:text-indigo-400",
+    ring: "ring-indigo-500/30",
+    badge: "bg-indigo-500/15 text-indigo-700 dark:text-indigo-300",
   },
 };
 
@@ -156,6 +170,15 @@ export const NICHES: Record<string, { label: string; emoji: string; categories: 
       "Sustainability", "Organization", "Productivity", "Entertainment",
     ],
   },
+  "Short Stories": {
+    label: "Short Stories",
+    emoji: "📖",
+    categories: [
+      "Dex the Bearded Dragon", "Animal Tales", "Adventure", "Friendship",
+      "Mystery", "Humor", "Coming of Age", "Nature & Wildlife",
+      "Heartwarming", "Slice of Life", "Fantasy", "Holiday",
+    ],
+  },
 };
 
 export const NICHE_KEYS = Object.keys(NICHES);
@@ -168,6 +191,7 @@ export const NICHE_COLORS: Record<string, { border: string; bg: string; text: st
   "Technology":       { border: "border-blue-500/60",   bg: "bg-blue-500/8",    text: "text-blue-600 dark:text-blue-400",      ring: "ring-blue-500/30" },
   "Finance":          { border: "border-green-500/60",  bg: "bg-green-500/8",   text: "text-green-600 dark:text-green-400",    ring: "ring-green-500/30" },
   "Lifestyle":        { border: "border-violet-500/60", bg: "bg-violet-500/8",  text: "text-violet-600 dark:text-violet-400",  ring: "ring-violet-500/30" },
+  "Short Stories":    { border: "border-indigo-500/60", bg: "bg-indigo-500/8",  text: "text-indigo-600 dark:text-indigo-400",   ring: "ring-indigo-500/30" },
 };
 
 // Fallback flat list (Pet Care default) for code that imports CATEGORIES directly
@@ -201,6 +225,7 @@ export const STARTER_BLOCKS_BY_STYLE: Record<StyleId, BlockType[]> = {
   "storyteller":            ["title", "prologue", "paragraph", "image", "paragraph", "conclusion"],
   "professional-educator":  ["title", "prologue", "paragraph", "key-facts", "table", "references", "conclusion"],
   "newsletter":             ["title", "prologue", "tips", "cta", "conclusion"],
+  "short-story":            ["title", "prologue", "paragraph", "paragraph", "paragraph", "conclusion"],
 };
 
 export const PLACEMENT_OPTIONS = [

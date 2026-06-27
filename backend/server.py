@@ -133,6 +133,24 @@ STYLE_SYSTEM_PROMPTS = {
         "Avoid: exclamation points in every sentence, fake urgency, vague teasers, hollow sign-offs. "
         "End each piece feeling useful — like the reader learned one thing they'll actually use."
     ),
+    "short-story": (
+        "You are a short fiction writer. Your job is to write a complete, satisfying short story — "
+        "not an article, not a how-to, not a listicle. A story. With a character, a problem or tension, "
+        "and a payoff. Every block you write is part of a continuous narrative. "
+        "\n\nStory principles:\n"
+        "- Open in the middle of something happening. No 'Once upon a time'. Drop the reader into a scene.\n"
+        "- Show, don't tell. Behavior reveals character. Sensory detail creates world. Dialogue (when used) sounds real.\n"
+        "- Keep momentum. Each paragraph should make the reader want to know what comes next.\n"
+        "- Tone can range from warm and humorous to quietly moving — follow the brief's direction.\n"
+        "- Ending: land it. A small revelation, a moment of change, a last image that lingers. Not a moral lecture.\n"
+        "- Length: short stories should feel complete but tight. No padding.\n"
+        "\nBlock roles in a short story:\n"
+        "- prologue/intro: the opening scene — immediately in the world, immediately with the character.\n"
+        "- paragraph: a scene beat, a turning point, an interior moment. Keep narrative moving.\n"
+        "- conclusion: the story's final beat — resolution, image, or quiet emotional close.\n"
+        "\nDo NOT break into bullet points, headers, or 'tips' mid-story unless the brief explicitly asks for it. "
+        "This is fiction. Stay in the story world."
+    ),
 }
 
 BLOCK_INSTRUCTIONS = {
@@ -154,10 +172,36 @@ BLOCK_INSTRUCTIONS = {
 }
 
 
+DEX_CHARACTER = """
+CHARACTER PROFILE — Dex the Bearded Dragon:
+- Species: Central bearded dragon (Pogona vitticeps)
+- Personality: Curious, bold, a little dramatic. Thinks every basking spot is his throne.
+  Has strong opinions about crickets (pro) and leafy greens (suspicious). Loves watching TV,
+  especially nature documentaries — he puffs up at any lizard that isn't him.
+- Physical: Classic sandy-gold scales, a beard that flares deep black when he's unimpressed,
+  bright amber eyes that miss nothing. Medium-sized — not a giant, but acts like one.
+- Home: A well-loved vivarium in a warm living room. Knows the layout of his whole house
+  from supervised floor time. Has claimed the couch armrest as his secondary throne.
+- Voice in story: Dex does not speak. He communicates through action, posture, and expression —
+  head-bobs, arm-waves, slow blinks, beard color changes. The narrator interprets his inner world.
+- Story tone: warm, gently humorous, emotionally true. Dex is a real character, not a prop.
+  His small dragon life has genuine stakes: a new food, a strange visitor, a change in routine.
+"""
+
+
 def build_system_prompt(style_id: str, brief: Dict[str, Any], style_instructions: Optional[str] = None) -> str:
     base = (style_instructions or "").strip() or STYLE_SYSTEM_PROMPTS.get(style_id, STYLE_SYSTEM_PROMPTS["real-person"])
     facts = (brief.get('factsToUse', '') or '').strip()
     niche = (brief.get('niche', '') or 'General').strip()
+    categories = brief.get('categories', [])
+
+    # Inject Dex's character profile for Short Stories niche when relevant
+    if niche == "Short Stories" and (
+        "Dex the Bearded Dragon" in categories
+        or "dex" in (brief.get('topic', '') or '').lower()
+    ):
+        base += DEX_CHARACTER
+
     context = (
         f"\n\nARTICLE CONTEXT:\n"
         f"- Niche / content area: {niche}\n"
