@@ -73,15 +73,21 @@ function buildFrontmatter(d: Draft): string {
   return lines.join("\n");
 }
 
-export function toMarkdown(d: Draft): string {
+// Raw markdown body — no frontmatter. Used for preview and HTML rendering.
+export function toMarkdownBody(d: Draft): string {
   const titleBlock = d.blocks.find(b => b.type === "title");
   const title = titleBlock?.content?.trim() || d.brief.topic || "Untitled";
-  const parts: string[] = [buildFrontmatter(d)];
+  const parts: string[] = [];
   if (d.headerImage.url || d.headerImage.prompt) {
     parts.push(`![${d.headerImage.alt || title}](${d.headerImage.url || "https://placehold.co/1200x630"})\n`);
   }
   for (const b of d.blocks) parts.push(blockToMarkdown(b));
   return parts.join("\n");
+}
+
+// Full markdown with frontmatter — for file export/download only.
+export function toMarkdown(d: Draft): string {
+  return buildFrontmatter(d) + "\n" + toMarkdownBody(d);
 }
 
 // Markdown -> HTML via `marked` (GFM). Always sanitize before injecting into the DOM.
@@ -107,7 +113,7 @@ ${d.brief.tags.length ? `<meta name="keywords" content="${escapeHtml(d.brief.tag
 <body>
 <article>
 ${d.headerImage.url || d.headerImage.prompt ? `<img alt="${escapeHtml(d.headerImage.alt || title)}" src="${escapeHtml(d.headerImage.url || "https://placehold.co/1200x630")}" />` : ""}
-${mdToHtml(toMarkdown(d))}
+${mdToHtml(toMarkdownBody(d))}
 </article>
 </body>
 </html>`;

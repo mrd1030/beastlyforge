@@ -12,7 +12,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { getDraft } from "@/lib/storage";
 import type { Draft } from "@/types";
 import {
-  toMarkdown, toHtml, toMdx, toJson,
+  toMarkdown, toMarkdownBody, toHtml, toMdx, toJson,
   toNewsletterMarkdown, toNewsletterHtml,
   mdToHtml, downloadFile, copyToClipboard, buildLlmPrompt
 } from "@/lib/exports";
@@ -39,7 +39,7 @@ export default function Finalize() {
   }, [id, navigate]);
 
   const safeHtml = useMemo(
-    () => draft ? DOMPurify.sanitize(mdToHtml(toMarkdown(draft)), { ADD_ATTR: ["target", "rel"] }) : "",
+    () => draft ? DOMPurify.sanitize(mdToHtml(toMarkdownBody(draft)), { ADD_ATTR: ["target", "rel"] }) : "",
     [draft]
   );
 
