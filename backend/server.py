@@ -233,6 +233,7 @@ def build_system_prompt(style_id: str, brief: Dict[str, Any], style_instructions
         f"- Warm, knowledgeable, and personal is the goal. Honest — not fictional.\n\n"
         f"VOICE RULES:\n"
         f"- Never use phrases like 'in today's fast-paced world', 'navigating', 'embark', 'delve', 'unleash', 'in conclusion'.\n"
+        f"- NEVER use en dashes (–) or em dashes (—). Use a comma, period, or rewrite the sentence instead.\n"
         f"- Use natural human cadence. Vary sentence length. Stay true to the chosen writing style above.\n"
         f"- Output ONLY the requested content. No preamble, no explanation, no labels.\n"
     )
