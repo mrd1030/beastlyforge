@@ -265,6 +265,13 @@ def build_system_prompt(style_id: str, brief: Dict[str, Any], style_instructions
     return base + context
 
 
+def _cached_system(system: str):
+    """Wrap the system prompt with prompt caching. Repeated calls with the same
+    system prompt (e.g. streaming an article block by block) read it from cache
+    at ~10% of the input cost instead of paying full price every request."""
+    return [{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}]
+
+
 async def llm_complete(system: str, user_text: str, max_tokens: int = 2000) -> str:
     if USE_ANTHROPIC_DIRECT:
         try:
@@ -272,7 +279,7 @@ async def llm_complete(system: str, user_text: str, max_tokens: int = 2000) -> s
             msg = await aclient.messages.create(
                 model=CLAUDE_MODEL,
                 max_tokens=max_tokens,
-                system=system,
+                system=_cached_system(system),
                 messages=[{"role": "user", "content": user_text}],
             )
             return msg.content[0].text
@@ -384,6 +391,12 @@ class BriefGenerateIn(BaseModel):
     niche: str = "General"
 
 
+class ProcessArticleIn(BaseModel):
+    text: str
+    styleId: str = "real-person"
+    niche: str = "General"
+
+
 # ============ ROUTES ============
 @api_router.get("/")
 async def root():
@@ -393,6 +406,10 @@ async def root():
 def _build_block_user_prompt(body: GenerateBlockIn) -> str:
     instr = BLOCK_INSTRUCTIONS.get(body.blockType, BLOCK_INSTRUCTIONS["paragraph"])
     prior = (body.priorContent or "").strip()
+    # Cap prior context to keep input costs bounded on long articles. The most
+    # recent text matters most for continuity, so keep the tail.
+    if len(prior) > 8000:
+        prior = "…(earlier sections omitted for brevity — the story/article continues)…\n" + prior[-8000:]
     user = f"BLOCK TYPE: {body.blockType}\nLENGTH: {body.targetLength}\nNOTE: {body.blockNote or '(none)'}\n\n{instr}"
     if prior:
         user = (
@@ -423,7 +440,7 @@ async def generate_block_stream(body: GenerateBlockIn):
                 async with aclient.messages.stream(
                     model=CLAUDE_MODEL,
                     max_tokens=1500,
-                    system=system,
+                    system=_cached_system(system),
                     messages=[{"role": "user", "content": user}],
                 ) as stream:
                     async for text in stream.text_stream:
@@ -501,6 +518,61 @@ async def generate_article(body: dict):
         else:
             raise HTTPException(500, "Failed to parse model output")
     return {"results": results}
+
+
+@api_router.post("/process/article")
+async def process_article(body: ProcessArticleIn):
+    """Take a finished article and split it into structured blocks + metadata.
+    The author's words are preserved verbatim — this only segments and extracts."""
+    if not body.text.strip():
+        raise HTTPException(400, "No article text provided")
+    system = (
+        "You are a precise content processor for an article builder. You take a finished article "
+        "and split it into structured blocks plus metadata. You DO NOT rewrite, improve, or alter "
+        "the author's words — you only segment and extract. Preserve the original text verbatim "
+        "inside block contents."
+    )
+    user = (
+        f"NICHE: {body.niche}\n\n"
+        f"ARTICLE:\n---\n{body.text}\n---\n\n"
+        "Split this article into blocks and extract metadata. Return ONLY raw JSON (no code fences):\n\n"
+        "{\n"
+        '  "title": "the article title (write one if missing)",\n'
+        '  "blocks": [{"type": "<one of: title|prologue|paragraph|tips|pros-cons|key-facts|table|cta|conclusion|ending|resources|references>", "content": "verbatim text"}],\n'
+        '  "audience": "who this is for",\n'
+        '  "keyPoints": "- bullet summary of the main points",\n'
+        '  "angle": "the author\'s perspective in 1-2 sentences",\n'
+        '  "focusKeyword": "primary SEO keyword",\n'
+        '  "metaDescription": "a 150-160 character meta description",\n'
+        '  "tags": ["kebab-case-tags"],\n'
+        '  "categories": ["1-3 fitting categories"]\n'
+        "}\n\n"
+        "Rules:\n"
+        "- The first block must be type \"title\" with the title as its content.\n"
+        "- Preserve the author's exact wording in block contents. Do not paraphrase.\n"
+        "- Use \"tips\" for bullet lists, \"key-facts\" for fact boxes, \"table\" for markdown tables.\n"
+        "- Use \"paragraph\" for normal prose; split long articles into multiple paragraph blocks at natural section boundaries.\n"
+    )
+    raw = await llm_complete(system, user, max_tokens=8000)
+    raw = raw.strip()
+    if raw.startswith("```"):
+        raw = raw.strip("`")
+        if raw.startswith("json"):
+            raw = raw[4:]
+        raw = raw.strip()
+    try:
+        data = json.loads(raw)
+    except Exception:
+        start = raw.find("{")
+        end = raw.rfind("}")
+        if start >= 0 and end > start:
+            try:
+                data = json.loads(raw[start:end+1])
+            except Exception:
+                raise HTTPException(500, "Failed to parse model output")
+        else:
+            raise HTTPException(500, "Failed to parse model output")
+    return data
 
 
 @api_router.post("/humanize")

@@ -8,7 +8,12 @@ const escapeHtml = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;")
 function blockToMarkdown(b: Block): string {
   const text = (b.content || "").trim();
   switch (b.type) {
-    case "title":      return `# ${text || "Untitled"}\n`;
+    case "title": {
+      // AI output occasionally arrives with its own "#" marks, surrounding
+      // quotes, or trailing lines — strip all of it so the heading renders clean.
+      const clean = text.replace(/^#+\s*/, "").replace(/^["'"]|["'"]$/g, "").split("\n")[0].trim();
+      return `# ${clean || "Untitled"}\n`;
+    }
     case "prologue":   return `> ${text}\n`;
     case "image":      return `![${b.imageAlt || "image"}](${b.imageUrl || "https://placehold.co/1200x630"})\n\n*${b.caption || ""}*\n`;
     case "key-facts":  return `### Key Facts\n${text}\n`;

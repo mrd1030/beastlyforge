@@ -74,6 +74,21 @@ export async function generateBrief(payload: { topic: string; styleId: string; n
   return data;
 }
 
+export async function processArticle(payload: { text: string; styleId: string; niche?: string }): Promise<{
+  title: string;
+  blocks: { type: string; content: string }[];
+  audience: string;
+  keyPoints: string;
+  angle: string;
+  focusKeyword: string;
+  metaDescription: string;
+  tags: string[];
+  categories: string[];
+}> {
+  const { data } = await client.post("/process/article", payload);
+  return data;
+}
+
 export async function sendEmail(payload: { recipient_email: string; subject: string; html_content: string }) {
   const { data } = await client.post("/send-email", payload);
   return data;

@@ -8,10 +8,10 @@ import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Sparkles, X, Plus, Image as ImageIcon, ChevronDown, ChevronRight } from "lucide-react";
-import { NICHES, NICHE_KEYS, STYLE_COLORS, PLACEMENT_OPTIONS, TYPE_OPTIONS, getAffiliateDisclosureText } from "@/lib/templates";
+import { NICHES, NICHE_KEYS, STYLE_COLORS, PLACEMENT_OPTIONS, TYPE_OPTIONS, BLOCK_LIBRARY, getAffiliateDisclosureText } from "@/lib/templates";
 import { getAllStyles, getStyleInstructions } from "@/lib/styles";
 import { loadCustomCategories, saveCustomCategories, uid } from "@/lib/storage";
-import { generateBrief, generateFacts, generateImagePrompt, generateMeta, generateSeo } from "@/lib/api";
+import { generateBrief, generateFacts, generateImagePrompt, generateMeta, generateSeo, processArticle } from "@/lib/api";
 import { Loader2 } from "lucide-react";
 import type { Draft, StyleId, Block } from "@/types";
 
@@ -52,6 +52,8 @@ export default function BriefSidebar({ draft, setDraft, leftOpen, setLeftOpen, o
   const [seoBusy, setSeoBusy] = useState(false);
   const [briefBusy, setBriefBusy] = useState(false);
   const [factsBusy, setFactsBusy] = useState(false);
+  const [importText, setImportText] = useState("");
+  const [importBusy, setImportBusy] = useState(false);
 
   const styles = getAllStyles();
   const nicheCategories = NICHES[niche]?.categories || NICHES["Pet Care"].categories;
@@ -207,6 +209,47 @@ export default function BriefSidebar({ draft, setDraft, leftOpen, setLeftOpen, o
     } finally { setFactsBusy(false); }
   };
 
+  const onProcessArticle = async () => {
+    if (!importText.trim()) { toast.error("Paste an article first"); return; }
+    setImportBusy(true);
+    const t = toast.loading("Processing article into blocks…");
+    try {
+      const r = await processArticle({ text: importText, styleId: draft.styleId, niche });
+      setDraft(prev => {
+        if (!prev) return prev;
+        const validTypes = new Set(BLOCK_LIBRARY.map(x => x.type));
+        const blocks: Block[] = (r.blocks || []).map(b => {
+          const type = (validTypes.has(b.type as Block["type"]) ? b.type : "paragraph") as Block["type"];
+          return {
+            id: uid("blk"),
+            type,
+            label: BLOCK_LIBRARY.find(x => x.type === type)?.label,
+            content: b.content || "",
+          };
+        });
+        return {
+          ...prev,
+          blocks: blocks.length ? blocks : prev.blocks,
+          brief: {
+            ...prev.brief,
+            topic:           r.title           || prev.brief.topic,
+            audience:        r.audience        || prev.brief.audience,
+            keyPoints:       r.keyPoints       || prev.brief.keyPoints,
+            angle:           r.angle           || prev.brief.angle,
+            focusKeyword:    r.focusKeyword    || prev.brief.focusKeyword,
+            metaDescription: r.metaDescription || prev.brief.metaDescription,
+            tags:            [...new Set([...prev.brief.tags, ...(r.tags || [])])],
+            categories:      [...new Set([...prev.brief.categories, ...(r.categories || [])])],
+          },
+        };
+      });
+      setImportText("");
+      toast.success("Article imported", { id: t, description: `${r.blocks?.length || 0} blocks created — check the Edit & Preview tab.` });
+    } catch (e: any) {
+      toast.error("Processing failed", { id: t, description: e?.message });
+    } finally { setImportBusy(false); }
+  };
+
   const metaLen = draft.brief.metaDescription.length;
   const metaOk = metaLen >= 150 && metaLen <= 160;
   const toggle = (k: string) => setOpenSection(prev => prev === k ? "" : k);
@@ -261,6 +304,31 @@ export default function BriefSidebar({ draft, setDraft, leftOpen, setLeftOpen, o
               );
             })}
           </div>
+        </Sec>
+
+        <Sec open={openSection === "import"} onToggle={() => toggle("import")} k="import" title="Import Existing Article">
+          <p className="text-xs text-muted-foreground -mt-1">
+            Paste a full article and the AI splits it into editable blocks and fills the brief, SEO fields, tags, and categories for you. Replaces the current blocks.
+          </p>
+          <Textarea
+            rows={8}
+            value={importText}
+            onChange={e => setImportText(e.target.value)}
+            placeholder="Paste your full article here…"
+            data-testid="import-article-input"
+          />
+          <Button
+            variant="outline"
+            size="sm"
+            className="w-full"
+            onClick={onProcessArticle}
+            disabled={importBusy || !importText.trim()}
+            data-testid="process-article-btn"
+          >
+            {importBusy
+              ? <><Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> Processing…</>
+              : <><Sparkles className="w-3.5 h-3.5 mr-1.5" /> Process with AI</>}
+          </Button>
         </Sec>
 
         <Sec open={openSection === "brief"} onToggle={() => toggle("brief")} k="brief" title="Brief & Metadata">
