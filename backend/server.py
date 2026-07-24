@@ -471,6 +471,30 @@ def _filter_references_block(text: str, facts: str) -> str:
     return "\n".join(kept_lines).strip()
 
 
+def _sources_block_to_facts(content: str) -> str:
+    """Convert an imported references/resources block's prose into Facts to Use
+    bullets, so real citations that were already in the imported article survive
+    _filter_references_block later instead of being dropped for having nothing to
+    verify against. Imported sources are often just a name in prose with no URL
+    ("PetMD, covers cat behavior...") — a name alone won't survive the domain
+    filter, so a source with no discoverable domain is flagged instead of silently
+    carried forward (which would just relocate the original bug to a new entry
+    point) or silently dropped (which would repeat it)."""
+    lines = []
+    for raw_line in (content or "").split("\n"):
+        line = raw_line.strip()
+        if not line:
+            continue
+        text = re.sub(r'^[-*\d.]+\s*', '', line).strip()
+        if not text:
+            continue
+        if _extract_domains(text):
+            lines.append(f"- {text}")
+        else:
+            lines.append(f"- {text} — NEEDS A URL: add this source's website so it isn't dropped when you regenerate this block.")
+    return "\n".join(lines)
+
+
 def _build_block_user_prompt(body: GenerateBlockIn) -> str:
     instr = BLOCK_INSTRUCTIONS.get(body.blockType, BLOCK_INSTRUCTIONS["paragraph"])
     prior = (body.priorContent or "").strip()
@@ -649,6 +673,20 @@ async def process_article(body: ProcessArticleIn):
                 raise HTTPException(500, "Failed to parse model output")
         else:
             raise HTTPException(500, "Failed to parse model output")
+
+    # Carry any references/resources block's sources into factsToUse, so they're
+    # available to validate against if the writer regenerates that block later —
+    # otherwise the block came in with real sources but nothing to check them
+    # against, and _filter_references_block strips them all on the next regenerate.
+    facts_parts = [
+        _sources_block_to_facts(b.get("content", ""))
+        for b in data.get("blocks", [])
+        if b.get("type") in ("references", "resources")
+    ]
+    facts_parts = [p for p in facts_parts if p]
+    if facts_parts:
+        data["factsToUse"] = "\n".join(facts_parts)
+
     return data
 
 

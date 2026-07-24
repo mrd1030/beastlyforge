@@ -238,6 +238,7 @@ export default function BriefSidebar({ draft, setDraft, leftOpen, setLeftOpen, o
             angle:           r.angle           || prev.brief.angle,
             focusKeyword:    r.focusKeyword    || prev.brief.focusKeyword,
             metaDescription: r.metaDescription || prev.brief.metaDescription,
+            factsToUse:      r.factsToUse      || prev.brief.factsToUse,
             tags:            [...new Set([...prev.brief.tags, ...(r.tags || [])])],
             categories:      [...new Set([...prev.brief.categories, ...(r.categories || [])])],
           },

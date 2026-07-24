@@ -84,6 +84,7 @@ export async function processArticle(payload: { text: string; styleId: string; n
   metaDescription: string;
   tags: string[];
   categories: string[];
+  factsToUse?: string;
 }> {
   const { data } = await client.post("/process/article", payload);
   return data;
