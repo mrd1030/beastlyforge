@@ -558,7 +558,11 @@ async def generate_article(body: dict):
         plan_lines.append(f"{i}. [{b['id']}] TYPE={b['type']} NOTE={note}\n   TASK: {instr}")
 
     user = (
-        "Write the full article by producing content for EACH block below in order. "
+        "Write the full article by producing content for EACH block below, in order, as one continuous, "
+        "connected piece — not a set of independent snippets. Treat the blocks as sequential sections of a "
+        "single article: each later block continues from where the one before it left off. "
+        "NEVER repeat the same anecdote, example, scene, statistic, or specific detail in more than one block "
+        "— once you've used it, it's used. Each block must add something the article doesn't already have. "
         "Return a single JSON object mapping block id -> content string. "
         "DO NOT wrap in markdown code fences. Output ONLY raw JSON.\n\n"
         "BLOCKS:\n" + "\n".join(plan_lines) +
