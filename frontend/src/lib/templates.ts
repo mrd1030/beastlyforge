@@ -194,9 +194,6 @@ export const NICHE_COLORS: Record<string, { border: string; bg: string; text: st
   "Short Stories":    { border: "border-indigo-500/60", bg: "bg-indigo-500/8",  text: "text-indigo-600 dark:text-indigo-400",   ring: "ring-indigo-500/30" },
 };
 
-// Fallback flat list (Pet Care default) for code that imports CATEGORIES directly
-export const CATEGORIES = NICHES["Pet Care"].categories;
-
 export const BLOCK_LIBRARY: { type: BlockType; label: string; hint: string }[] = [
   { type: "title",      label: "Title / Header",       hint: "The article's working title" },
   { type: "prologue",   label: "Prologue / Intro",     hint: "Warm, intimate opener" },

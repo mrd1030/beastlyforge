@@ -22,6 +22,13 @@ below). The backend wraps the Anthropic (Claude) API for all content generation,
 sourced-fact web search, and Resend for sending newsletter emails. There is no database — see
 [Known limitations](#known-limitations).
 
+Since this is a bring-your-own-key tool, every generation/email call spends *your* API budget.
+The backend has a basic per-IP rate limiter on `/api/generate/*`, `/api/process/*`, and
+`/api/send-email` (in-memory, no extra infra) to blunt casual abuse if the URL leaks — tune the
+`RATE_LIMIT_*` constants near the top of `backend/server.py` to taste. It resets on restart and
+won't hold up under multiple backend instances behind a load balancer; treat it as a basic
+deterrent, not a substitute for real auth if you need stronger guarantees.
+
 ## Environment variables
 
 Copy `backend/.env.example` to `backend/.env` and fill in:
@@ -33,7 +40,6 @@ Copy `backend/.env.example` to `backend/.env` and fill in:
 | `RESEND_API_KEY` | For sending email | Needed to send newsletter test/preview emails. |
 | `SENDER_EMAIL` | For sending email | The "from" address used when sending via Resend. |
 | `CLAUDE_MODEL` | No | Overrides the Claude model used (defaults to `claude-sonnet-4-6`). |
-| `EMERGENT_LLM_KEY` | No — and not usable as shipped | Legacy fallback LLM proxy path, only consulted if `ANTHROPIC_API_KEY` is not set. It requires the private `emergentintegrations` package, which isn't listed in `requirements.txt`/installed by a normal setup — without it, leaving `ANTHROPIC_API_KEY` unset just 500s. In practice, set `ANTHROPIC_API_KEY`. |
 | `CORS_ORIGINS` | No | Comma-separated allowed origins for the API (defaults to `*`). Set this to your frontend's URL in production. |
 
 The frontend reads one variable from `frontend/.env`:

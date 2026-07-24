@@ -28,10 +28,6 @@ export default function Composer() {
   const [confirmNew, setConfirmNew] = useState(false);
   const [activeTab, setActiveTab] = useState("layout");
   const [leftOpen, setLeftOpen] = useState(true);
-  const [niche, setNiche] = useState<string>(() => {
-    try { return JSON.parse(localStorage.getItem("bf.settings.v1") || "{}").defaultNiche || "Pet Care"; }
-    catch { return "Pet Care"; }
-  });
   const confirmedRef = useRef(false);
 
   // Load existing draft, or ask before creating a brand-new one.
@@ -116,7 +112,7 @@ export default function Composer() {
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
           {/* LEFT SIDEBAR */}
           <aside className={`lg:col-span-3 ${leftOpen ? "" : "hidden lg:block"} order-2 lg:order-1`}>
-            <BriefSidebar draft={draft} setDraft={setDraft} leftOpen={leftOpen} setLeftOpen={setLeftOpen} onStyleChange={onStyleChange} niche={niche} setNiche={setNiche} />
+            <BriefSidebar draft={draft} setDraft={setDraft} leftOpen={leftOpen} setLeftOpen={setLeftOpen} onStyleChange={onStyleChange} />
           </aside>
 
           {/* CANVAS */}
@@ -150,7 +146,7 @@ export default function Composer() {
                       <LayoutBuilder draft={draft} setDraft={setDraft} seedStarter={seedStarterBlocks} />
                     </TabsContent>
                     <TabsContent value="edit" className="mt-4">
-                      <EditPreview draft={draft} setDraft={setDraft} niche={niche} />
+                      <EditPreview draft={draft} setDraft={setDraft} />
                     </TabsContent>
                     <TabsContent value="newsletter" className="mt-4">
                       <NewsletterBuilder draft={draft} setDraft={setDraft} />

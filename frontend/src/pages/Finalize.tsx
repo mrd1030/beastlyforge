@@ -14,10 +14,13 @@ import type { Draft } from "@/types";
 import {
   toMarkdown, toMarkdownBody, toHtml, toMdx, toJson,
   toNewsletterMarkdown, toNewsletterHtml,
-  mdToHtml, downloadFile, copyToClipboard, buildLlmPrompt
+  mdToHtml, downloadFile, copyToClipboard, buildLlmPrompt, toContentSegments
 } from "@/lib/exports";
+import { parseChartBlock } from "@/lib/chart";
+import { ChartBlockView } from "@/components/ChartBlockView";
 import { generateSocial, generateYoutube } from "@/lib/api";
 import { pushToSanity, loadSanityToken } from "@/lib/sanity";
+import { getStyleInstructions } from "@/lib/styles";
 
 export default function Finalize() {
   const { id } = useParams();
@@ -38,10 +41,21 @@ export default function Finalize() {
     }
   }, [id, navigate]);
 
-  const safeHtml = useMemo(
-    () => draft ? DOMPurify.sanitize(mdToHtml(toMarkdownBody(draft)), { ADD_ATTR: ["target", "rel"] }) : "",
-    [draft]
-  );
+  // Chart blocks render as a real chart component instead of a raw JSON dump —
+  // see lib/exports.ts#toContentSegments.
+  const previewSegments = useMemo(() => {
+    if (!draft) return [];
+    return toContentSegments(draft).map((seg, i) => {
+      if (seg.kind === "chart") {
+        return { key: `chart-${i}`, kind: "chart" as const, data: parseChartBlock(seg.block.content)! };
+      }
+      return {
+        key: `html-${i}`,
+        kind: "html" as const,
+        html: DOMPurify.sanitize(mdToHtml(seg.markdown), { ADD_ATTR: ["target", "rel"] }),
+      };
+    });
+  }, [draft]);
 
   if (!draft) return <div className="p-10 text-center text-muted-foreground">Loading…</div>;
 
@@ -86,7 +100,8 @@ export default function Finalize() {
     try {
       const r = await generateSocial({
         title, metaDescription: draft.brief.metaDescription,
-        content: toMarkdown(draft), styleId: draft.styleId,
+        content: toMarkdownBody(draft), styleId: draft.styleId,
+        styleInstructions: getStyleInstructions(draft.styleId),
       });
       setSocial(r);
       toast.success("Social posts ready", { id: t });
@@ -116,7 +131,10 @@ export default function Finalize() {
     setBusy(true);
     const t = toast.loading("Writing YouTube Shorts script…");
     try {
-      const r = await generateYoutube({ title, content: toMarkdown(draft), styleId: draft.styleId });
+      const r = await generateYoutube({
+        title, content: toMarkdownBody(draft), styleId: draft.styleId,
+        styleInstructions: getStyleInstructions(draft.styleId),
+      });
       setYoutube(r.text);
       toast.success("Script ready", { id: t });
     } catch (e: any) { toast.error("Failed", { id: t, description: e?.message }); }
@@ -230,7 +248,12 @@ export default function Finalize() {
                       )}
                     </div>
                   )}
-                  <article className="bf-prose" dangerouslySetInnerHTML={{ __html: safeHtml }} data-testid="article-prose" />
+                  <article className="bf-prose" data-testid="article-prose">
+                    {previewSegments.map(seg => seg.kind === "chart"
+                      ? <ChartBlockView key={seg.key} data={seg.data} />
+                      : <div key={seg.key} dangerouslySetInnerHTML={{ __html: seg.html }} />
+                    )}
+                  </article>
                 </CardContent>
               </Card>
             ) : (
@@ -248,7 +271,12 @@ export default function Finalize() {
                         )}
                       </div>
                     )}
-                    <article className="bf-prose p-4 text-sm" dangerouslySetInnerHTML={{ __html: safeHtml }} />
+                    <article className="bf-prose p-4 text-sm">
+                      {previewSegments.map(seg => seg.kind === "chart"
+                        ? <ChartBlockView key={seg.key} data={seg.data} />
+                        : <div key={seg.key} dangerouslySetInnerHTML={{ __html: seg.html }} />
+                      )}
+                    </article>
                   </div>
                 </div>
               </div>

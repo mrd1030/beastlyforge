@@ -1,26 +1,24 @@
 from fastapi import FastAPI, APIRouter, HTTPException
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, JSONResponse
 from dotenv import load_dotenv
+from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.middleware.cors import CORSMiddleware
+from starlette.requests import Request
 import os
 import logging
 import json
 import re
+import time
 import asyncio
 import resend
+from collections import defaultdict, deque
 from pathlib import Path
 from pydantic import BaseModel, Field, EmailStr
 from typing import Optional, List, Dict, Any
-import uuid
 from datetime import datetime, timezone
 
 import anthropic as anthropic_sdk
 from tavily import TavilyClient
-try:
-    from emergentintegrations.llm.chat import LlmChat, UserMessage, TextDelta, StreamDone
-    _HAS_EMERGENT = True
-except ImportError:
-    _HAS_EMERGENT = False
 
 ROOT_DIR = Path(__file__).parent
 _env_path = ROOT_DIR.parent / '.env'
@@ -29,21 +27,79 @@ load_dotenv(_env_path, override=True)
 print(f"[env] Loading from: {_env_path} (exists={_env_path.exists()})")
 
 ANTHROPIC_API_KEY = os.environ.get('ANTHROPIC_API_KEY', '')
-EMERGENT_LLM_KEY = os.environ.get('EMERGENT_LLM_KEY', '')
 RESEND_API_KEY = os.environ.get('RESEND_API_KEY', '')
 SENDER_EMAIL = os.environ.get('SENDER_EMAIL', '')
 CLAUDE_MODEL = os.environ.get('CLAUDE_MODEL', 'claude-sonnet-4-6')
 TAVILY_API_KEY = os.environ.get('TAVILY_API_KEY', '')
-DEFAULT_MODEL = ("anthropic", "claude-sonnet-4-5-20250929")  # used only when falling back to emergentintegrations
-
-# Prefer direct Anthropic key; fall back to emergentintegrations proxy.
-USE_ANTHROPIC_DIRECT = bool(ANTHROPIC_API_KEY)
 
 app = FastAPI(title="BeastlyForge API")
 api_router = APIRouter(prefix="/api")
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
+
+
+# ============ RATE LIMITING ============
+# This is a bring-your-own-key tool: every /api/generate/*, /api/process/*, and
+# /api/send-email call spends the deployer's own Anthropic/Tavily/Resend budget.
+# With the API wide open, anyone who finds the URL could script requests against it
+# and run up a real bill with zero friction. This is a minimal, dependency-free
+# per-IP limiter — good enough to blunt casual/scripted abuse without requiring a
+# full accounts system. Tune the numbers below to taste.
+RATE_LIMIT_GENERAL_PER_MINUTE = 60      # all /api/ traffic, per IP
+RATE_LIMIT_EXPENSIVE_PER_MINUTE = 20    # LLM/email-triggering routes specifically, per IP
+_RATE_LIMIT_WINDOW_SECONDS = 60
+_RATE_LIMIT_MAX_TRACKED_KEYS = 50_000   # safety cap so a flood of distinct IPs can't grow this unbounded
+
+_EXPENSIVE_PATH_PREFIXES = ("/api/generate/", "/api/process/", "/api/send-email")
+
+
+class RateLimitMiddleware(BaseHTTPMiddleware):
+    """In-memory, per-IP sliding-window rate limiter. No external dependencies or
+    shared cache — fine for the single-process deployment render.yaml provisions.
+    If you scale to multiple backend instances behind a load balancer, this state
+    needs to move somewhere shared (e.g. Redis) to stay effective."""
+
+    def __init__(self, app):
+        super().__init__(app)
+        self._hits: Dict[str, deque] = defaultdict(deque)
+
+    @staticmethod
+    def _client_ip(request: Request) -> str:
+        forwarded = request.headers.get("x-forwarded-for")
+        if forwarded:
+            return forwarded.split(",")[0].strip()
+        return request.client.host if request.client else "unknown"
+
+    def _allow(self, key: str, limit: int) -> bool:
+        if len(self._hits) > _RATE_LIMIT_MAX_TRACKED_KEYS:
+            # Defensive: an attacker spraying requests from many distinct IPs could
+            # otherwise grow this dict without bound. A full reset is blunt but safe,
+            # and rare enough in practice not to meaningfully weaken the limiter.
+            self._hits.clear()
+        now = time.monotonic()
+        hits = self._hits[key]
+        while hits and now - hits[0] > _RATE_LIMIT_WINDOW_SECONDS:
+            hits.popleft()
+        if len(hits) >= limit:
+            return False
+        hits.append(now)
+        return True
+
+    async def dispatch(self, request: Request, call_next):
+        path = request.url.path
+        if not path.startswith("/api/"):
+            return await call_next(request)
+
+        ip = self._client_ip(request)
+        if not self._allow(f"general:{ip}", RATE_LIMIT_GENERAL_PER_MINUTE):
+            return JSONResponse({"detail": "Too many requests. Please slow down."}, status_code=429)
+        if path.startswith(_EXPENSIVE_PATH_PREFIXES) and not self._allow(f"expensive:{ip}", RATE_LIMIT_EXPENSIVE_PER_MINUTE):
+            return JSONResponse(
+                {"detail": "Rate limit exceeded for AI generation. Please wait a minute and try again."},
+                status_code=429,
+            )
+        return await call_next(request)
 
 
 # ============ STYLE PROMPTS ============
@@ -289,34 +345,20 @@ def _cached_system(system: str):
 
 
 async def llm_complete(system: str, user_text: str, max_tokens: int = 2000) -> str:
-    if USE_ANTHROPIC_DIRECT:
-        try:
-            aclient = anthropic_sdk.AsyncAnthropic(api_key=ANTHROPIC_API_KEY)
-            msg = await aclient.messages.create(
-                model=CLAUDE_MODEL,
-                max_tokens=max_tokens,
-                system=_cached_system(system),
-                messages=[{"role": "user", "content": user_text}],
-            )
-            return msg.content[0].text
-        except Exception as e:
-            logger.exception("Anthropic API call failed")
-            raise HTTPException(500, f"Anthropic error: {str(e)}")
-    # Fallback: emergentintegrations proxy
-    if not _HAS_EMERGENT or not EMERGENT_LLM_KEY:
+    if not ANTHROPIC_API_KEY:
         raise HTTPException(500, "No LLM key configured. Set ANTHROPIC_API_KEY in backend/.env.")
-    session_id = str(uuid.uuid4())
-    chat = LlmChat(
-        api_key=EMERGENT_LLM_KEY,
-        session_id=session_id,
-        system_message=system,
-    ).with_model(*DEFAULT_MODEL)
     try:
-        result = await chat.send_message(UserMessage(text=user_text))
-        return result if isinstance(result, str) else str(result)
+        aclient = anthropic_sdk.AsyncAnthropic(api_key=ANTHROPIC_API_KEY)
+        msg = await aclient.messages.create(
+            model=CLAUDE_MODEL,
+            max_tokens=max_tokens,
+            system=_cached_system(system),
+            messages=[{"role": "user", "content": user_text}],
+        )
+        return msg.content[0].text
     except Exception as e:
-        logger.exception("LLM call failed")
-        raise HTTPException(500, f"LLM error: {str(e)}")
+        logger.exception("Anthropic API call failed")
+        raise HTTPException(500, f"Anthropic error: {str(e)}")
 
 
 # ============ MODELS ============
@@ -331,6 +373,7 @@ class BriefIn(BaseModel):
     factsToUse: str = ""
     categories: List[str] = []
     tags: List[str] = []
+    niche: str = ""
 
 
 class GenerateBlockIn(BaseModel):
@@ -388,12 +431,14 @@ class SocialSnippetsIn(BaseModel):
     metaDescription: str
     content: str
     styleId: str = "real-person"
+    styleInstructions: Optional[str] = ""
 
 
 class YoutubeScriptIn(BaseModel):
     title: str
     content: str
     styleId: str = "storyteller"
+    styleInstructions: Optional[str] = ""
 
 
 class LayoutSuggestIn(BaseModel):
@@ -416,7 +461,7 @@ class ProcessArticleIn(BaseModel):
 # ============ ROUTES ============
 @api_router.get("/")
 async def root():
-    return {"app": "BeastlyForge", "model": DEFAULT_MODEL[1]}
+    return {"app": "BeastlyForge", "model": CLAUDE_MODEL}
 
 
 _DOMAIN_RE = re.compile(r'\b(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}\b')
@@ -474,6 +519,30 @@ def _filter_references_block(text: str, facts: str) -> str:
     return "\n".join(kept_lines).strip()
 
 
+def _sources_block_to_facts(content: str) -> str:
+    """Convert an imported references/resources block's prose into Facts to Use
+    bullets, so real citations that were already in the imported article survive
+    _filter_references_block later instead of being dropped for having nothing to
+    verify against. Imported sources are often just a name in prose with no URL
+    ("PetMD, covers cat behavior...") — a name alone won't survive the domain
+    filter, so a source with no discoverable domain is flagged instead of silently
+    carried forward (which would just relocate the original bug to a new entry
+    point) or silently dropped (which would repeat it)."""
+    lines = []
+    for raw_line in (content or "").split("\n"):
+        line = raw_line.strip()
+        if not line:
+            continue
+        text = re.sub(r'^[-*\d.]+\s*', '', line).strip()
+        if not text:
+            continue
+        if _extract_domains(text):
+            lines.append(f"- {text}")
+        else:
+            lines.append(f"- {text} — NEEDS A URL: add this source's website so it isn't dropped when you regenerate this block.")
+    return "\n".join(lines)
+
+
 def _build_block_user_prompt(body: GenerateBlockIn) -> str:
     instr = BLOCK_INSTRUCTIONS.get(body.blockType, BLOCK_INSTRUCTIONS["paragraph"])
     prior = (body.priorContent or "").strip()
@@ -516,7 +585,7 @@ async def generate_block_stream(body: GenerateBlockIn):
                 text = await llm_complete(system, user, max_tokens=1500)
                 text = _filter_references_block(text.strip(), body.brief.factsToUse)
                 yield f"data: {json.dumps({'delta': text})}\n\n"
-            elif USE_ANTHROPIC_DIRECT:
+            elif ANTHROPIC_API_KEY:
                 aclient = anthropic_sdk.AsyncAnthropic(api_key=ANTHROPIC_API_KEY)
                 async with aclient.messages.stream(
                     model=CLAUDE_MODEL,
@@ -527,19 +596,8 @@ async def generate_block_stream(body: GenerateBlockIn):
                     async for text in stream.text_stream:
                         yield f"data: {json.dumps({'delta': text})}\n\n"
             else:
-                if not _HAS_EMERGENT or not EMERGENT_LLM_KEY:
-                    yield f"data: {json.dumps({'error': 'No LLM key configured. Set ANTHROPIC_API_KEY in backend/.env.'})}\n\n"
-                    return
-                chat = LlmChat(
-                    api_key=EMERGENT_LLM_KEY,
-                    session_id=str(uuid.uuid4()),
-                    system_message=system,
-                ).with_model(*DEFAULT_MODEL)
-                async for ev in chat.stream_message(UserMessage(text=user)):
-                    if isinstance(ev, TextDelta):
-                        yield f"data: {json.dumps({'delta': ev.content})}\n\n"
-                    elif isinstance(ev, StreamDone):
-                        break
+                yield f"data: {json.dumps({'error': 'No LLM key configured. Set ANTHROPIC_API_KEY in backend/.env.'})}\n\n"
+                return
         except Exception as e:
             logger.exception("Stream failed")
             yield f"data: {json.dumps({'error': str(e)})}\n\n"
@@ -663,6 +721,20 @@ async def process_article(body: ProcessArticleIn):
                 raise HTTPException(500, "Failed to parse model output")
         else:
             raise HTTPException(500, "Failed to parse model output")
+
+    # Carry any references/resources block's sources into factsToUse, so they're
+    # available to validate against if the writer regenerates that block later —
+    # otherwise the block came in with real sources but nothing to check them
+    # against, and _filter_references_block strips them all on the next regenerate.
+    facts_parts = [
+        _sources_block_to_facts(b.get("content", ""))
+        for b in data.get("blocks", [])
+        if b.get("type") in ("references", "resources")
+    ]
+    facts_parts = [p for p in facts_parts if p]
+    if facts_parts:
+        data["factsToUse"] = "\n".join(facts_parts)
+
     return data
 
 
@@ -780,8 +852,9 @@ async def generate_newsletter_preview(body: NewsletterPreviewIn):
 
 @api_router.post("/generate/social")
 async def generate_social(body: SocialSnippetsIn):
+    base = (body.styleInstructions or "").strip() or STYLE_SYSTEM_PROMPTS.get(body.styleId, STYLE_SYSTEM_PROMPTS["real-person"])
     system = (
-        STYLE_SYSTEM_PROMPTS.get(body.styleId, STYLE_SYSTEM_PROMPTS["real-person"]) +
+        base +
         "\n\nProduce three social posts in strict JSON with keys: x (<=270 chars), instagram (caption + 5 hashtags), "
         "facebook (2-3 sentences). Output ONLY raw JSON."
     )
@@ -803,8 +876,9 @@ async def generate_social(body: SocialSnippetsIn):
 
 @api_router.post("/generate/youtube")
 async def generate_youtube(body: YoutubeScriptIn):
+    base = (body.styleInstructions or "").strip() or STYLE_SYSTEM_PROMPTS.get(body.styleId, STYLE_SYSTEM_PROMPTS["storyteller"])
     system = (
-        STYLE_SYSTEM_PROMPTS.get(body.styleId, STYLE_SYSTEM_PROMPTS["storyteller"]) +
+        base +
         "\n\nWrite a 60-90 second YouTube Shorts script for a pet-care creator. "
         "Sections: [HOOK] 1-2 lines. [BODY] 4-6 short beats. [CTA] one warm closing line. "
         "Plain text. No JSON. No camera directions in brackets except section labels above."
@@ -1005,6 +1079,11 @@ async def send_email(request: EmailRequest):
 
 # Mount router
 app.include_router(api_router)
+
+# Rate limiting must be added before CORS so CORS ends up as the outermost layer —
+# otherwise a 429 response short-circuited by the rate limiter would skip CORS
+# entirely and the browser would report it as a network error instead of a 429.
+app.add_middleware(RateLimitMiddleware)
 
 app.add_middleware(
     CORSMiddleware,

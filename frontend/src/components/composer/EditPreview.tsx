@@ -14,11 +14,10 @@ import type { Draft, Block } from "@/types";
 interface Props {
   draft: Draft;
   setDraft: React.Dispatch<React.SetStateAction<Draft | null>>;
-  niche: string;
 }
 
-export default function EditPreview({ draft, setDraft, niche }: Props) {
-  const nc = NICHE_COLORS[niche] || NICHE_COLORS["Pet Care"];
+export default function EditPreview({ draft, setDraft }: Props) {
+  const nc = NICHE_COLORS[draft.brief.niche] || NICHE_COLORS["Pet Care"];
   const [busy, setBusy] = useState(false);
   const [blockBusy, setBlockBusy] = useState<string>("");
   const abortRef = useRef<AbortController | null>(null);

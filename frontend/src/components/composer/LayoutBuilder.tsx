@@ -40,12 +40,13 @@ export default function LayoutBuilder({ draft, setDraft, seedStarter }: Props) {
   const [palette] = useState(BLOCK_LIBRARY);
   const [busy, setBusy] = useState(false);
 
-  const setBlocks = (blocks: Block[]) => setDraft(p => p ? { ...p, blocks } : p);
+  const setBlocks = (blocks: Block[] | ((prev: Block[]) => Block[])) =>
+    setDraft(p => p ? { ...p, blocks: typeof blocks === "function" ? blocks(p.blocks) : blocks } : p);
 
   const addBlock = (type: BlockType) => {
     const lib = BLOCK_LIBRARY.find(b => b.type === type)!;
     const b: Block = { id: uid("blk"), type, label: lib.label, note: "" };
-    setBlocks([...draft.blocks, b]);
+    setBlocks(prev => [...prev, b]);
   };
 
   const onDragEnd = (r: DropResult) => {
@@ -55,21 +56,28 @@ export default function LayoutBuilder({ draft, setDraft, seedStarter }: Props) {
       const type = palette[r.source.index].type as BlockType;
       const lib = BLOCK_LIBRARY.find(b => b.type === type)!;
       const newBlock: Block = { id: uid("blk"), type, label: lib.label, note: "" };
-      const blocks = [...draft.blocks];
-      blocks.splice(r.destination.index, 0, newBlock);
-      setBlocks(blocks);
+      const destIndex = r.destination.index;
+      setBlocks(prev => {
+        const blocks = [...prev];
+        blocks.splice(destIndex, 0, newBlock);
+        return blocks;
+      });
       return;
     }
     // Reorder canvas
     if (r.source.droppableId === "canvas" && r.destination.droppableId === "canvas") {
-      const blocks = [...draft.blocks];
-      const [moved] = blocks.splice(r.source.index, 1);
-      blocks.splice(r.destination.index, 0, moved);
-      setBlocks(blocks);
+      const srcIndex = r.source.index;
+      const destIndex = r.destination.index;
+      setBlocks(prev => {
+        const blocks = [...prev];
+        const [moved] = blocks.splice(srcIndex, 1);
+        blocks.splice(destIndex, 0, moved);
+        return blocks;
+      });
     }
   };
 
-  const removeBlock = (id: string) => setBlocks(draft.blocks.filter(b => b.id !== id));
+  const removeBlock = (id: string) => setBlocks(prev => prev.filter(b => b.id !== id));
 const updateBlock = (id: string, patch: Partial<Block>) => {
   setDraft(prev => {
     if (!prev) return prev;

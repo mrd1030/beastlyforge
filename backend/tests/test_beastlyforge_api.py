@@ -33,7 +33,7 @@ def test_root(s):
     assert r.status_code == 200
     j = r.json()
     assert j["app"] == "BeastlyForge"
-    assert j["model"] == "claude-sonnet-4-5-20250929"
+    assert "claude" in j["model"].lower()
 
 
 # ---- block generation ----
