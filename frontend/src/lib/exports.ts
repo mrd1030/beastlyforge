@@ -17,7 +17,7 @@ function blockToMarkdown(b: Block): string {
       return `# ${clean || "Untitled"}\n`;
     }
     case "prologue":   return `> ${text}\n`;
-    case "image":      return `![${b.imageAlt || "image"}](${b.imageUrl || "https://placehold.co/1200x630"})\n\n*${b.caption || ""}*\n`;
+    case "image":      return `![${b.imageAlt || "image"}](${b.imageUrl || "https://placehold.co/1200x630"})\n\n*${text}*\n`;
     case "key-facts":  return `### Key Facts\n${text}\n`;
     case "tips":       return `### Tips\n${text}\n`;
     case "pros-cons":  return `### Pros & Cons\n${text}\n`;
