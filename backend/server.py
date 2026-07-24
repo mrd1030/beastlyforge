@@ -2,10 +2,10 @@ from fastapi import FastAPI, APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
-from motor.motor_asyncio import AsyncIOMotorClient
 import os
 import logging
 import json
+import re
 import asyncio
 import resend
 from pathlib import Path
@@ -27,11 +27,6 @@ _env_path = ROOT_DIR.parent / '.env'
 load_dotenv(ROOT_DIR / '.env', override=True)
 load_dotenv(_env_path, override=True)
 print(f"[env] Loading from: {_env_path} (exists={_env_path.exists()})")
-
-# MongoDB
-mongo_url = os.environ['MONGO_URL']
-client = AsyncIOMotorClient(mongo_url)
-db = client[os.environ['DB_NAME']]
 
 ANTHROPIC_API_KEY = os.environ.get('ANTHROPIC_API_KEY', '')
 EMERGENT_LLM_KEY = os.environ.get('EMERGENT_LLM_KEY', '')
@@ -169,8 +164,22 @@ BLOCK_INSTRUCTIONS = {
     "cta": "Write a warm, non-pushy call-to-action paragraph (2-3 sentences).",
     "conclusion": "Write a sincere closing paragraph (3-4 sentences) that ties the article together.",
     "custom": "Write rich, on-topic content for this custom section.",
-    "resources": "List 4-6 useful resources (books, sites, communities) as markdown bullets with short descriptions.",
-    "references": "List 3-5 credible sources as markdown bullets. Format: - Source Name — short note on what it covers.",
+    "resources": (
+        "List 4-6 general, useful resource TYPES (e.g. 'a veterinary journal', 'your local shelter', "
+        "'a certified trainer', 'a breed-specific rescue group') as markdown bullets with short descriptions. "
+        "These are generic suggestions for where a reader could look, NOT citations for claims made in this "
+        "article — do not name a specific real organization unless it literally appears in the Facts to Use field."
+    ),
+    "references": (
+        "List credible sources for claims made in this article. This is a CITATION list, not a suggestions list: "
+        "cite ONLY organizations or domains that literally appear in the Facts to Use field below — never a "
+        "plausible-sounding real organization that wasn't provided. Format each bullet as: "
+        "- Organization or Site Name (domain.com) — short note on what it covers, including the domain exactly "
+        "as it appears in Facts to Use so it can be verified. "
+        "List 3-5 sources if that many genuinely appear in Facts to Use; if fewer are available, list only those "
+        "— do NOT pad the list to hit a target count. If Facts to Use contains no sources with a real domain, "
+        "output nothing rather than inventing one."
+    ),
     "affiliate": "Write a short, friendly, honest affiliate disclosure paragraph. Mention products are personally recommended.",
     "ending": "Write the final beat of the story. No header, no label, no 'Conclusion'. Just the last moment — a quiet image, a small truth, a shift in the character. It should feel complete without announcing itself. 2-4 sentences max.",
 }
@@ -249,7 +258,14 @@ def build_system_prompt(style_id: str, brief: Dict[str, Any], style_instructions
         f"- Do NOT invent specific statistics, percentages, study results, dates, prices, brand claims, or veterinary/medical assertions. State such specifics ONLY if they appear in the writer's input above.\n"
         f"- When information is uncertain or not provided, stay general and cautious. Prefer practical, experience-based guidance over precise factual claims.\n"
         f"- For any health/medical topic, gently recommend consulting a veterinarian rather than asserting clinical facts.\n"
-        f"- Never fabricate sources, citations, studies, or quotes. For references/resources, suggest credible general source TYPES unless specific sources are provided.\n"
+        f"- Never fabricate sources, citations, studies, or quotes.\n"
+        f"- REFERENCES block (if requested): this is a citation list. Cite ONLY organizations/domains that "
+        f"literally appear in the Facts to Use field above. Never name a real-sounding organization that wasn't "
+        f"actually provided there, and never pad the list to hit a target count — list fewer, or none, if that's "
+        f"what's actually available.\n"
+        f"- RESOURCES block (if requested): this is different from references. It's fine to suggest credible "
+        f"general source TYPES here (e.g. 'a veterinary journal', 'a certified trainer') even without specific "
+        f"sources provided, since these are generic suggestions, not citations for claims in the article.\n"
         f"- Prioritize lived, practical, honest advice over generic 'fact' padding.\n\n"
         f"HONESTY RULES (critical — never break these):\n"
         f"- NEVER invent a specific pet you personally own. Do not write 'my cat Luna', 'our dog Max', or any named animal as if it belongs to you.\n"
@@ -403,6 +419,61 @@ async def root():
     return {"app": "BeastlyForge", "model": DEFAULT_MODEL[1]}
 
 
+_DOMAIN_RE = re.compile(r'\b(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}\b')
+
+
+def _extract_domains(text: str) -> set:
+    """Pull the set of real domains present in a block of text (e.g. brief.factsToUse),
+    normalized to lowercase with any leading 'www.' stripped."""
+    if not text:
+        return set()
+    domains = set()
+    for match in _DOMAIN_RE.findall(text):
+        host = match.lower()
+        if host.startswith('www.'):
+            host = host[4:]
+        domains.add(host)
+    return domains
+
+
+def _domain_matches(cited: str, allowed: str) -> bool:
+    """True if `cited` and `allowed` are the same domain, or one is a subdomain of
+    the other (e.g. 'en.wikipedia.org' should match a fact sourced from 'wikipedia.org',
+    and vice versa)."""
+    return (
+        cited == allowed
+        or cited.endswith("." + allowed)
+        or allowed.endswith("." + cited)
+    )
+
+
+def _filter_references_block(text: str, facts: str) -> str:
+    """Code-level backstop for the references block: strip any bullet whose cited
+    source domain doesn't actually appear in Facts to Use. The prompt already asks
+    the model not to fabricate sources, but that alone isn't reliable enough — this
+    validates the model's output against the ground-truth facts instead of trusting it.
+    Every non-blank line must cite a domain that matches Facts to Use, regardless of
+    formatting (markdown bullet, numbered list, etc.) — a references block has nothing
+    legitimate to say that isn't a citation, so anything unverifiable is dropped."""
+    text = (text or "").strip()
+    if not text:
+        return text
+    allowed = _extract_domains(facts)
+    if not allowed:
+        # No sourced facts were provided at all, so nothing in a references block
+        # can be verified — drop it rather than ship an unverifiable citation list.
+        return ""
+    kept_lines = []
+    for line in text.split("\n"):
+        stripped = line.strip()
+        if not stripped:
+            continue
+        cited_domains = _extract_domains(stripped)
+        if any(_domain_matches(cited, dom) for cited in cited_domains for dom in allowed):
+            kept_lines.append(line)
+    return "\n".join(kept_lines).strip()
+
+
 def _build_block_user_prompt(body: GenerateBlockIn) -> str:
     instr = BLOCK_INSTRUCTIONS.get(body.blockType, BLOCK_INSTRUCTIONS["paragraph"])
     prior = (body.priorContent or "").strip()
@@ -424,7 +495,10 @@ async def generate_block(body: GenerateBlockIn):
     system = build_system_prompt(body.styleId, body.brief.model_dump(), body.styleInstructions)
     user = _build_block_user_prompt(body)
     text = await llm_complete(system, user, max_tokens=1500)
-    return {"text": text.strip()}
+    text = text.strip()
+    if body.blockType == "references":
+        text = _filter_references_block(text, body.brief.factsToUse)
+    return {"text": text}
 
 
 @api_router.post("/generate/block/stream")
@@ -435,7 +509,14 @@ async def generate_block_stream(body: GenerateBlockIn):
 
     async def event_gen():
         try:
-            if USE_ANTHROPIC_DIRECT:
+            if body.blockType == "references":
+                # References must pass the domain-validation filter before anything
+                # reaches the client, so generate the full block first instead of
+                # streaming raw (possibly fabricated) deltas token-by-token.
+                text = await llm_complete(system, user, max_tokens=1500)
+                text = _filter_references_block(text.strip(), body.brief.factsToUse)
+                yield f"data: {json.dumps({'delta': text})}\n\n"
+            elif USE_ANTHROPIC_DIRECT:
                 aclient = anthropic_sdk.AsyncAnthropic(api_key=ANTHROPIC_API_KEY)
                 async with aclient.messages.stream(
                     model=CLAUDE_MODEL,
@@ -517,6 +598,12 @@ async def generate_article(body: dict):
                 raise HTTPException(500, "Failed to parse model output")
         else:
             raise HTTPException(500, "Failed to parse model output")
+
+    facts_to_use = brief.get("factsToUse", "")
+    for b in blocks:
+        if b.get("type") == "references" and b.get("id") in results:
+            results[b["id"]] = _filter_references_block(str(results[b["id"]]), facts_to_use)
+
     return {"results": results}
 
 
@@ -748,6 +835,54 @@ async def suggest_layout(body: LayoutSuggestIn):
     return data
 
 
+# Unambiguous photo-credit/stock-image markers: these never show up in a genuine
+# factual claim, so their presence alone is enough to flag a caption, regardless of
+# anything else in the sentence (a copyright year or image ID doesn't make it a fact).
+_HARD_CAPTION_MARKERS = (
+    "getty images", "shutterstock", "stock photo", "royalty free",
+)
+
+# Phrases that show up in scraped image captions/alt text (visual composition,
+# framing) rather than in a factual claim about the topic. Weaker signal than the
+# hard markers above — dropped only when nothing else suggests a real claim.
+# ("shot of" and "picture of" were deliberately excluded: they collide with ordinary
+# idioms like "first shot of vaccines" / "the picture of good health".)
+_SOFT_CAPTION_MARKERS = (
+    "out of focus", "in focus", "close-up", "close up", "blurred background",
+    "blurry background", "in the background", "in the foreground", "background is",
+    "foreground is", "bokeh", "depth of field", "color palette", "colour palette",
+    "photo of", "photograph of", "image of", "pictured",
+    "screenshot", "thumbnail", "low angle", "high angle",
+    "wide shot", "macro shot", "on the page", "out of frame", "in the frame",
+)
+
+# Presence of any of these is a reasonably strong signal the sentence is asserting
+# something factual/attributable rather than just describing what an image looks like.
+# Deliberately excludes bare digits — a copyright year or image dimension is a digit
+# too, and shouldn't be enough to wave through an otherwise obvious caption.
+_CLAIM_SIGNALS = (
+    "according to", "study", "studies", "research", "recommend", "survey",
+    "found that", "shows that", "indicates", "reported", "%",
+)
+
+
+def _looks_like_caption(sentence: str) -> bool:
+    """Heuristically flag scraped image captions/alt text (e.g. 'There are little pink
+    bits on the page and a blue out of focus background') rather than a real factual
+    sentence from the article body. Tavily's `content` field doesn't tag which parts of
+    the extracted text came from an <img alt> or <figcaption> versus body copy, so this
+    is a best-effort filter, not an exact one."""
+    s = sentence.strip()
+    if not s:
+        return True
+    lower = s.lower()
+    if any(marker in lower for marker in _HARD_CAPTION_MARKERS):
+        return True
+    has_claim_signal = any(sig in lower for sig in _CLAIM_SIGNALS)
+    has_soft_marker = any(marker in lower for marker in _SOFT_CAPTION_MARKERS)
+    return has_soft_marker and not has_claim_signal
+
+
 async def _search_facts(topic: str, niche: str = "General") -> str:
     """Run a Tavily search and return a clean bullet list of sourced facts."""
     if not TAVILY_API_KEY:
@@ -770,8 +905,12 @@ async def _search_facts(topic: str, niche: str = "General") -> str:
         for r in results.get("results", []):
             content = (r.get("content") or "").strip()
             if content:
-                # Take first 2 sentences as a fact bullet
-                sentences = [s.strip() for s in content.replace("\n", " ").split(".") if len(s.strip()) > 30]
+                # Take first 2 real sentences (filtering out caption/alt-text-style
+                # fragments first) as a fact bullet. Split on ., !, and ? so a caption
+                # fragment ending in "!" or "?" doesn't fuse with an adjacent real
+                # sentence and take it down when filtered.
+                sentences = [s.strip() for s in re.split(r'[.!?]+', content.replace("\n", " ")) if len(s.strip()) > 30]
+                sentences = [s for s in sentences if not _looks_like_caption(s)]
                 for s in sentences[:2]:
                     lines.append(f"- {s}. (Source: {r.get('url', '')})")
         return "\n".join(lines[:10])  # cap at 10 bullets
@@ -870,8 +1009,3 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-
-@app.on_event("shutdown")
-async def shutdown_db_client():
-    client.close()
