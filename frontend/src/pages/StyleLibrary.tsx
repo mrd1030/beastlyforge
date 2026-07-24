@@ -23,7 +23,7 @@ const EXAMPLES: Record<string, string> = {
   "storyteller": "\"It was the kind of summer morning where the dew sticks to your shins. I found him under the porch — a tiny tortoise no bigger than my palm.\"",
   "professional-educator": "\"Bearded dragons are diurnal reptiles requiring UVB exposure. In simpler terms: they need real sunlight or a special bulb that mimics it — and the difference matters more than most guides let on.\"",
   "newsletter": "\"Hi friends — three quick reads for you this week. Settle in with your tea and let's get into it.\"",
-  "short-story": "\"Dex noticed the strawberry before anyone put it in his bowl. He'd been tracking it — a slow, deliberate swivel of the head — since it came out of the fridge.\"",
+  "short-story": "\"The cat had been watching the door for an hour before anyone noticed. When it finally opened, she didn't move at first — just watched, deciding.\"",
 };
 
 export default function StyleLibrary() {

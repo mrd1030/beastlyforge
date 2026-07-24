@@ -1,5 +1,7 @@
 import type { Draft, Block, StandaloneNewsletter, NewsletterPreview } from "@/types";
 import { marked } from "marked";
+import { parseChartBlock, chartToSvg } from "@/lib/chart";
+import { loadSettings } from "@/lib/storage";
 
 marked.setOptions({ gfm: true, breaks: true });
 
@@ -52,6 +54,7 @@ function buildFrontmatter(d: Draft): string {
   const rt = readingTime(words);
   const category = d.brief.categories[0] || "";
   const tags = d.brief.tags.length ? `[${d.brief.tags.map(t => `"${t}"`).join(", ")}]` : "[]";
+  const authorName = (loadSettings().authorName || "").trim();
 
   const lines = [
     "---",
@@ -66,7 +69,7 @@ function buildFrontmatter(d: Draft): string {
     `description: ${q(d.brief.metaDescription)}`,
     `image: ${q(d.headerImage.url || "")}`,
     `imageAlt: ${q(d.headerImage.alt || "")}`,
-    `author: "Mike"`,
+    ...(authorName ? [`author: ${q(authorName)}`] : []),
     `status: "published"`,
     `affiliate: ${d.affiliate.enabled}`,
     `noIndex: false`,
@@ -95,10 +98,54 @@ export function toMarkdown(d: Draft): string {
   return buildFrontmatter(d) + "\n" + toMarkdownBody(d);
 }
 
+export type ContentSegment =
+  | { kind: "markdown"; markdown: string }
+  | { kind: "chart"; block: Block };
+
+// Same content as toMarkdownBody, but split at "chart" blocks so they can be
+// rendered as a real chart (React component in-app, static SVG in the standalone
+// HTML export) instead of dumped as raw JSON text. A chart block whose content
+// doesn't actually parse as chart data falls back to the plain markdown/JSON
+// rendering rather than silently disappearing.
+export function toContentSegments(d: Draft): ContentSegment[] {
+  const titleBlock = d.blocks.find(b => b.type === "title");
+  const title = titleBlock?.content?.trim() || d.brief.topic || "Untitled";
+  const segments: ContentSegment[] = [];
+  let buffer: string[] = [];
+  const flush = () => {
+    if (buffer.length) {
+      segments.push({ kind: "markdown", markdown: buffer.join("\n") });
+      buffer = [];
+    }
+  };
+  if (d.headerImage.url || d.headerImage.prompt) {
+    buffer.push(`![${d.headerImage.alt || title}](${d.headerImage.url || "https://placehold.co/1200x630"})\n`);
+  }
+  for (const b of d.blocks) {
+    if (b.type === "chart" && parseChartBlock(b.content)) {
+      flush();
+      segments.push({ kind: "chart", block: b });
+      continue;
+    }
+    buffer.push(blockToMarkdown(b));
+  }
+  flush();
+  return segments;
+}
+
 // Markdown -> HTML via `marked` (GFM). Always sanitize before injecting into the DOM.
 export function mdToHtml(md: string): string {
   if (!md) return "";
   return marked.parse(md) as string;
+}
+
+function segmentsToHtml(d: Draft): string {
+  return toContentSegments(d).map(seg => {
+    if (seg.kind === "markdown") return mdToHtml(seg.markdown);
+    const data = parseChartBlock(seg.block.content)!;
+    const caption = data.description ? `<figcaption>${escapeHtml(data.description)}</figcaption>` : "";
+    return `<figure>${caption}${chartToSvg(data)}</figure>`;
+  }).join("\n");
 }
 
 export function toHtml(d: Draft): string {
@@ -118,7 +165,7 @@ ${d.brief.tags.length ? `<meta name="keywords" content="${escapeHtml(d.brief.tag
 <body>
 <article>
 ${d.headerImage.url || d.headerImage.prompt ? `<img alt="${escapeHtml(d.headerImage.alt || title)}" src="${escapeHtml(d.headerImage.url || "https://placehold.co/1200x630")}" />` : ""}
-${mdToHtml(toMarkdownBody(d))}
+${segmentsToHtml(d)}
 </article>
 </body>
 </html>`;

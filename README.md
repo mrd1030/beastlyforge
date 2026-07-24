@@ -22,6 +22,13 @@ below). The backend wraps the Anthropic (Claude) API for all content generation,
 sourced-fact web search, and Resend for sending newsletter emails. There is no database — see
 [Known limitations](#known-limitations).
 
+Since this is a bring-your-own-key tool, every generation/email call spends *your* API budget.
+The backend has a basic per-IP rate limiter on `/api/generate/*`, `/api/process/*`, and
+`/api/send-email` (in-memory, no extra infra) to blunt casual abuse if the URL leaks — tune the
+`RATE_LIMIT_*` constants near the top of `backend/server.py` to taste. It resets on restart and
+won't hold up under multiple backend instances behind a load balancer; treat it as a basic
+deterrent, not a substitute for real auth if you need stronger guarantees.
+
 ## Environment variables
 
 Copy `backend/.env.example` to `backend/.env` and fill in:

@@ -177,6 +177,8 @@
 .bf-prose th { background: hsl(var(--muted)); font-weight: 600; }
 .bf-prose img { border-radius: 12px; }
 .bf-prose code { background: hsl(var(--muted)); padding: 0.1rem 0.35rem; border-radius: 4px; font-size: 0.9em; }
+.bf-chart { margin: 1.25rem 0; }
+.bf-chart-caption { font-size: 0.9rem; color: hsl(var(--muted-foreground)); margin: 0 0 0.5rem; }
 
 /* Glass */
 .glass {

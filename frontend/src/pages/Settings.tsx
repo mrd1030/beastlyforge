@@ -15,7 +15,7 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { CATEGORIES } from "@/lib/templates";
+import { NICHES, NICHE_KEYS } from "@/lib/templates";
 import { getAllStyles } from "@/lib/styles";
 import {
   loadCustomStyles, upsertCustomStyle, deleteCustomStyle,
@@ -34,7 +34,8 @@ export default function Settings() {
   const [deleteId, setDeleteId] = useState<string | null>(null);
 
   const customCats = loadCustomCategories();
-  const allCats = [...CATEGORIES, ...customCats];
+  const nicheCategories = NICHES[settings.defaultNiche]?.categories || NICHES["Pet Care"].categories;
+  const allCats = [...nicheCategories, ...customCats];
 
   const persistSettings = (patch: Partial<AppSettings>) => {
     const next = { ...settings, ...patch };
@@ -72,6 +73,11 @@ export default function Settings() {
   const toggleDefaultCat = (c: string) => {
     const has = settings.defaultCategories.includes(c);
     persistSettings({ defaultCategories: has ? settings.defaultCategories.filter(x => x !== c) : [...settings.defaultCategories, c] });
+  };
+
+  const changeDefaultNiche = (niche: string) => {
+    // Categories are niche-specific — clear picks that don't apply to the new niche.
+    persistSettings({ defaultNiche: niche, defaultCategories: [] });
   };
 
   return (
@@ -137,6 +143,29 @@ export default function Settings() {
         <Card>
           <CardContent className="p-6 space-y-6">
             <div>
+              <Label>Author name</Label>
+              <p className="text-xs text-muted-foreground mb-1.5">Used as the byline in exported frontmatter. Leave blank to omit it.</p>
+              <Input
+                value={settings.authorName}
+                onChange={e => persistSettings({ authorName: e.target.value })}
+                placeholder="Your name or pen name"
+                className="max-w-md"
+                data-testid="author-name-input"
+              />
+            </div>
+
+            <div>
+              <Label>Default niche</Label>
+              <p className="text-xs text-muted-foreground mb-1.5">Sets which niche (and category list) a new article starts with.</p>
+              <Select value={settings.defaultNiche} onValueChange={changeDefaultNiche}>
+                <SelectTrigger className="max-w-md" data-testid="default-niche-select"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {NICHE_KEYS.map(k => <SelectItem key={k} value={k}>{NICHES[k].emoji} {NICHES[k].label}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
               <Label>Default writing style</Label>
               <Select value={settings.defaultStyleId} onValueChange={v => persistSettings({ defaultStyleId: v })}>
                 <SelectTrigger className="mt-1.5 max-w-md" data-testid="default-style-select"><SelectValue /></SelectTrigger>
@@ -148,6 +177,7 @@ export default function Settings() {
 
             <div>
               <Label>Default categories</Label>
+              <p className="text-xs text-muted-foreground mb-1">Categories shown here match the niche selected above.</p>
               <div className="flex flex-wrap gap-1.5 mt-2" data-testid="default-categories">
                 {allCats.map(c => {
                   const active = settings.defaultCategories.includes(c);

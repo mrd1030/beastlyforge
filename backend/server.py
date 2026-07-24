@@ -1,13 +1,17 @@
 from fastapi import FastAPI, APIRouter, HTTPException
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, JSONResponse
 from dotenv import load_dotenv
+from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.middleware.cors import CORSMiddleware
+from starlette.requests import Request
 import os
 import logging
 import json
 import re
+import time
 import asyncio
 import resend
+from collections import defaultdict, deque
 from pathlib import Path
 from pydantic import BaseModel, Field, EmailStr
 from typing import Optional, List, Dict, Any
@@ -33,6 +37,69 @@ api_router = APIRouter(prefix="/api")
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
+
+
+# ============ RATE LIMITING ============
+# This is a bring-your-own-key tool: every /api/generate/*, /api/process/*, and
+# /api/send-email call spends the deployer's own Anthropic/Tavily/Resend budget.
+# With the API wide open, anyone who finds the URL could script requests against it
+# and run up a real bill with zero friction. This is a minimal, dependency-free
+# per-IP limiter — good enough to blunt casual/scripted abuse without requiring a
+# full accounts system. Tune the numbers below to taste.
+RATE_LIMIT_GENERAL_PER_MINUTE = 60      # all /api/ traffic, per IP
+RATE_LIMIT_EXPENSIVE_PER_MINUTE = 20    # LLM/email-triggering routes specifically, per IP
+_RATE_LIMIT_WINDOW_SECONDS = 60
+_RATE_LIMIT_MAX_TRACKED_KEYS = 50_000   # safety cap so a flood of distinct IPs can't grow this unbounded
+
+_EXPENSIVE_PATH_PREFIXES = ("/api/generate/", "/api/process/", "/api/send-email")
+
+
+class RateLimitMiddleware(BaseHTTPMiddleware):
+    """In-memory, per-IP sliding-window rate limiter. No external dependencies or
+    shared cache — fine for the single-process deployment render.yaml provisions.
+    If you scale to multiple backend instances behind a load balancer, this state
+    needs to move somewhere shared (e.g. Redis) to stay effective."""
+
+    def __init__(self, app):
+        super().__init__(app)
+        self._hits: Dict[str, deque] = defaultdict(deque)
+
+    @staticmethod
+    def _client_ip(request: Request) -> str:
+        forwarded = request.headers.get("x-forwarded-for")
+        if forwarded:
+            return forwarded.split(",")[0].strip()
+        return request.client.host if request.client else "unknown"
+
+    def _allow(self, key: str, limit: int) -> bool:
+        if len(self._hits) > _RATE_LIMIT_MAX_TRACKED_KEYS:
+            # Defensive: an attacker spraying requests from many distinct IPs could
+            # otherwise grow this dict without bound. A full reset is blunt but safe,
+            # and rare enough in practice not to meaningfully weaken the limiter.
+            self._hits.clear()
+        now = time.monotonic()
+        hits = self._hits[key]
+        while hits and now - hits[0] > _RATE_LIMIT_WINDOW_SECONDS:
+            hits.popleft()
+        if len(hits) >= limit:
+            return False
+        hits.append(now)
+        return True
+
+    async def dispatch(self, request: Request, call_next):
+        path = request.url.path
+        if not path.startswith("/api/"):
+            return await call_next(request)
+
+        ip = self._client_ip(request)
+        if not self._allow(f"general:{ip}", RATE_LIMIT_GENERAL_PER_MINUTE):
+            return JSONResponse({"detail": "Too many requests. Please slow down."}, status_code=429)
+        if path.startswith(_EXPENSIVE_PATH_PREFIXES) and not self._allow(f"expensive:{ip}", RATE_LIMIT_EXPENSIVE_PER_MINUTE):
+            return JSONResponse(
+                {"detail": "Rate limit exceeded for AI generation. Please wait a minute and try again."},
+                status_code=429,
+            )
+        return await call_next(request)
 
 
 # ============ STYLE PROMPTS ============
@@ -174,57 +241,10 @@ BLOCK_INSTRUCTIONS = {
 }
 
 
-OTIS_CHARACTER = """
-CHARACTER PROFILE — Otis the Bunny:
-- Species: Holland Lop rabbit
-- Personality: Confident, opinionated, and quietly obsessed with routine. Otis runs on a schedule
-  he invented and enforces without negotiation. He is affectionate on his own terms — he will
-  approach you when he has decided it is time, and not a moment before. Surprisingly brave for
-  something his size. Occasionally dramatic.
-- Physical: Floppy ears that frame a round, serious face. Soft grey-brown coat with a white patch
-  on his chest. Compact and low to the ground but moves fast when motivated. His nose twitches
-  constantly, cataloguing everything.
-- Home: Has claimed most of a living room through a combination of persistence and strategic
-  flopping. Has a dedicated corner with hay, a wooden chew toy he ignores, and a fleece blanket
-  he has rearranged to his exact specifications. Free-roams supervised.
-- Communication: Does not speak. Expresses himself through thumping, binkying (sudden midair
-  twists of joy), flopping dramatically onto his side, tooth-purring when content, and a slow,
-  deliberate nose-bonk when he wants attention. The narrator reads his inner world.
-- Story tone: warm, dry humor, emotionally honest. Otis takes himself seriously. The comedy
-  comes from the gap between his gravitas and the smallness of his concerns.
-"""
-
-
-DEX_CHARACTER = """
-CHARACTER PROFILE — Dex the Bearded Dragon:
-- Species: Central bearded dragon (Pogona vitticeps)
-- Personality: Curious, bold, a little dramatic. Thinks every basking spot is his throne.
-  Has strong opinions about crickets (pro) and leafy greens (suspicious). Loves watching TV,
-  especially nature documentaries — he puffs up at any lizard that isn't him.
-- Physical: Classic sandy-gold scales, a beard that flares deep black when he's unimpressed,
-  bright amber eyes that miss nothing. Medium-sized — not a giant, but acts like one.
-- Home: A well-loved vivarium in a warm living room. Knows the layout of his whole house
-  from supervised floor time. Has claimed the couch armrest as his secondary throne.
-- Voice in story: Dex does not speak. He communicates through action, posture, and expression —
-  head-bobs, arm-waves, slow blinks, beard color changes. The narrator interprets his inner world.
-- Story tone: warm, gently humorous, emotionally true. Dex is a real character, not a prop.
-  His small dragon life has genuine stakes: a new food, a strange visitor, a change in routine.
-"""
-
-
 def build_system_prompt(style_id: str, brief: Dict[str, Any], style_instructions: Optional[str] = None) -> str:
     base = (style_instructions or "").strip() or STYLE_SYSTEM_PROMPTS.get(style_id, STYLE_SYSTEM_PROMPTS["real-person"])
     facts = (brief.get('factsToUse', '') or '').strip()
     niche = (brief.get('niche', '') or 'General').strip()
-    categories = brief.get('categories', [])
-
-    # Inject character profiles for Short Stories niche when relevant
-    topic_lower = (brief.get('topic', '') or '').lower()
-    if niche == "Short Stories":
-        if "Dex the Bearded Dragon" in categories or "dex" in topic_lower:
-            base += DEX_CHARACTER
-        if "Otis the Bunny" in categories or "otis" in topic_lower:
-            base += OTIS_CHARACTER
 
     context = (
         f"\n\nARTICLE CONTEXT:\n"
@@ -363,12 +383,14 @@ class SocialSnippetsIn(BaseModel):
     metaDescription: str
     content: str
     styleId: str = "real-person"
+    styleInstructions: Optional[str] = ""
 
 
 class YoutubeScriptIn(BaseModel):
     title: str
     content: str
     styleId: str = "storyteller"
+    styleInstructions: Optional[str] = ""
 
 
 class LayoutSuggestIn(BaseModel):
@@ -740,8 +762,9 @@ async def generate_newsletter_preview(body: NewsletterPreviewIn):
 
 @api_router.post("/generate/social")
 async def generate_social(body: SocialSnippetsIn):
+    base = (body.styleInstructions or "").strip() or STYLE_SYSTEM_PROMPTS.get(body.styleId, STYLE_SYSTEM_PROMPTS["real-person"])
     system = (
-        STYLE_SYSTEM_PROMPTS.get(body.styleId, STYLE_SYSTEM_PROMPTS["real-person"]) +
+        base +
         "\n\nProduce three social posts in strict JSON with keys: x (<=270 chars), instagram (caption + 5 hashtags), "
         "facebook (2-3 sentences). Output ONLY raw JSON."
     )
@@ -763,9 +786,10 @@ async def generate_social(body: SocialSnippetsIn):
 
 @api_router.post("/generate/youtube")
 async def generate_youtube(body: YoutubeScriptIn):
+    base = (body.styleInstructions or "").strip() or STYLE_SYSTEM_PROMPTS.get(body.styleId, STYLE_SYSTEM_PROMPTS["storyteller"])
     system = (
-        STYLE_SYSTEM_PROMPTS.get(body.styleId, STYLE_SYSTEM_PROMPTS["storyteller"]) +
-        "\n\nWrite a 60-90 second YouTube Shorts script for a pet-care creator. "
+        base +
+        "\n\nWrite a 60-90 second YouTube Shorts script for a content creator. "
         "Sections: [HOOK] 1-2 lines. [BODY] 4-6 short beats. [CTA] one warm closing line. "
         "Plain text. No JSON. No camera directions in brackets except section labels above."
     )
@@ -965,6 +989,11 @@ async def send_email(request: EmailRequest):
 
 # Mount router
 app.include_router(api_router)
+
+# Rate limiting must be added before CORS so CORS ends up as the outermost layer —
+# otherwise a 429 response short-circuited by the rate limiter would skip CORS
+# entirely and the browser would report it as a network error instead of a 429.
+app.add_middleware(RateLimitMiddleware)
 
 app.add_middleware(
     CORSMiddleware,

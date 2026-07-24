@@ -174,7 +174,7 @@ export const NICHES: Record<string, { label: string; emoji: string; categories: 
     label: "Short Stories",
     emoji: "📖",
     categories: [
-      "Dex the Bearded Dragon", "Otis the Bunny", "Animal Tales", "Adventure", "Friendship",
+      "Animal Tales", "Adventure", "Friendship",
       "Mystery", "Humor", "Coming of Age", "Nature & Wildlife",
       "Heartwarming", "Slice of Life", "Fantasy", "Holiday",
     ],
@@ -193,9 +193,6 @@ export const NICHE_COLORS: Record<string, { border: string; bg: string; text: st
   "Lifestyle":        { border: "border-violet-500/60", bg: "bg-violet-500/8",  text: "text-violet-600 dark:text-violet-400",  ring: "ring-violet-500/30" },
   "Short Stories":    { border: "border-indigo-500/60", bg: "bg-indigo-500/8",  text: "text-indigo-600 dark:text-indigo-400",   ring: "ring-indigo-500/30" },
 };
-
-// Fallback flat list (Pet Care default) for code that imports CATEGORIES directly
-export const CATEGORIES = NICHES["Pet Care"].categories;
 
 export const BLOCK_LIBRARY: { type: BlockType; label: string; hint: string }[] = [
   { type: "title",      label: "Title / Header",       hint: "The article's working title" },
