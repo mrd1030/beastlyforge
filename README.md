@@ -42,11 +42,13 @@ Copy `backend/.env.example` to `backend/.env` and fill in:
 | `CLAUDE_MODEL` | No | Overrides the Claude model used (defaults to `claude-sonnet-4-6`). |
 | `CORS_ORIGINS` | No | Comma-separated allowed origins for the API (defaults to `*`). Set this to your frontend's URL in production. |
 
-The frontend reads one variable from `frontend/.env`:
+The frontend reads these from `frontend/.env`:
 
-| Variable | What it does |
-|---|---|
-| `VITE_BACKEND_URL` | Base URL of the running backend, e.g. `http://localhost:8000` locally. |
+| Variable | Required | What it does |
+|---|---|---|
+| `VITE_BACKEND_URL` | Yes | Base URL of the running backend, e.g. `http://localhost:8000` locally. |
+| `VITE_SANITY_PROJECT_ID` | For Sanity push | Enables "Push to Sanity" in Settings/Finalize and points it at your own Sanity project. Leave unset and the feature stays cleanly disabled — see the intro above. |
+| `VITE_SANITY_DATASET` | No | Which dataset to push into (defaults to `production`). Only relevant if `VITE_SANITY_PROJECT_ID` is set. |
 
 ## Running locally
 
@@ -79,6 +81,10 @@ The frontend dev server runs on `http://localhost:3000` and expects the backend 
   one browser/device isn't visible on another.
 - **Header images are paste-URL only.** You paste an image URL rather than uploading a file;
   there's no image upload/hosting pipeline yet.
+- **Chart blocks aren't grounded in Facts to Use.** Unlike Key Facts and References, the Chart
+  block's prompt explicitly allows sample/illustrative numbers — it's there to visualize a
+  comparison you describe, not to report a sourced statistic. Don't assume chart data is factual
+  without checking it yourself.
 
 ## Deployment
 
