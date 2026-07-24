@@ -79,6 +79,10 @@ The frontend dev server runs on `http://localhost:3000` and expects the backend 
   one browser/device isn't visible on another.
 - **Header images are paste-URL only.** You paste an image URL rather than uploading a file;
   there's no image upload/hosting pipeline yet.
+- **Chart blocks aren't grounded in Facts to Use.** Unlike Key Facts and References, the Chart
+  block's prompt explicitly allows sample/illustrative numbers — it's there to visualize a
+  comparison you describe, not to report a sourced statistic. Don't assume chart data is factual
+  without checking it yourself.
 
 ## Deployment
 
