@@ -4,7 +4,7 @@
 
 @layer base {
   :root {
-    /* BeastlyForge LIGHT — Warm Earth */
+    /* CreatorForge LIGHT — Warm Earth */
     --background: 41 33% 96%;        /* #F9F7F1 */
     --foreground: 22 33% 13%;        /* #2C1E16 */
     --card: 0 0% 100%;
@@ -34,7 +34,7 @@
   }
 
   .dark {
-    /* BeastlyForge DARK — Deep Starry Navy */
+    /* CreatorForge DARK — Deep Starry Navy */
     --background: 219 60% 10%;       /* #0A1429 */
     --foreground: 40 25% 92%;        /* #F1EDE6 */
     --card: 220 53% 16%;             /* #12203D */

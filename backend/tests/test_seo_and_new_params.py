@@ -1,5 +1,5 @@
 """Tests for new SEO endpoint and added optional params (styleInstructions, factsToUse).
-Iteration 2 additions for BeastlyForge."""
+Iteration 2 additions for CreatorForge."""
 import os
 import pytest
 import requests

@@ -1,12 +1,12 @@
-# BeastlyForge
+# CreatorForge
 
-BeastlyForge is an AI-assisted content studio for pet-care writers. You build an article or
-newsletter block by block (intro, tips, key facts, references, CTA, etc.), pick a writing style,
-and the app generates each block with Claude, optionally grounded in facts you've pasted in or
-pulled from a live web search. Finished pieces can be exported, previewed as a newsletter, and
-pushed directly to a Sanity content lake — though note that push target (project ID and dataset)
-is currently hardcoded in `frontend/src/lib/sanity.ts`, not environment-configurable, so as
-shipped it pushes into one specific Sanity project rather than one you point it at yourself.
+CreatorForge is an AI-assisted content studio for writers. You build an article or newsletter
+block by block (intro, tips, key facts, references, CTA, etc.), pick a writing style, and the app
+generates each block with Claude, optionally grounded in facts you've pasted in or pulled from a
+live web search. Finished pieces can be exported, previewed as a newsletter, and optionally pushed
+directly to a Sanity content lake — set `VITE_SANITY_PROJECT_ID` (and optionally
+`VITE_SANITY_DATASET`) in `frontend/.env` to point that at your own Sanity project; the push
+feature stays cleanly disabled until you do.
 
 ## Architecture
 
@@ -33,7 +33,6 @@ Copy `backend/.env.example` to `backend/.env` and fill in:
 | `RESEND_API_KEY` | For sending email | Needed to send newsletter test/preview emails. |
 | `SENDER_EMAIL` | For sending email | The "from" address used when sending via Resend. |
 | `CLAUDE_MODEL` | No | Overrides the Claude model used (defaults to `claude-sonnet-4-6`). |
-| `EMERGENT_LLM_KEY` | No — and not usable as shipped | Legacy fallback LLM proxy path, only consulted if `ANTHROPIC_API_KEY` is not set. It requires the private `emergentintegrations` package, which isn't listed in `requirements.txt`/installed by a normal setup — without it, leaving `ANTHROPIC_API_KEY` unset just 500s. In practice, set `ANTHROPIC_API_KEY`. |
 | `CORS_ORIGINS` | No | Comma-separated allowed origins for the API (defaults to `*`). Set this to your frontend's URL in production. |
 
 The frontend reads one variable from `frontend/.env`:

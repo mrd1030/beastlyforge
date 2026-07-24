@@ -147,7 +147,7 @@ export function saveSettings(s: AppSettings) {
 // ---- Standalone newsletter ----
 export function emptyStandaloneNewsletter(): StandaloneNewsletter {
   return {
-    title: "This week at BeastlyFacts",
+    title: "This week's newsletter",
     header: emptyHeader(),
     introText: "",
     outroText: "",

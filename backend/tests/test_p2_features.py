@@ -1,4 +1,4 @@
-"""Backend tests for BeastlyForge P2 batch:
+"""Backend tests for CreatorForge P2 batch:
   - POST /api/generate/block/stream  (SSE)
   - POST /api/send-email             (Resend; domain unverified -> graceful 500)
 """
@@ -8,7 +8,7 @@ import time
 import pytest
 import requests
 
-BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://beastly-forge.preview.emergentagent.com").rstrip("/")
+BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "http://localhost:8000").rstrip("/")
 TIMEOUT_LLM = 180
 
 
@@ -17,7 +17,7 @@ def test_api_root():
     r = requests.get(f"{BASE_URL}/api/", timeout=30)
     assert r.status_code == 200
     data = r.json()
-    assert data.get("app") == "BeastlyForge"
+    assert data.get("app") == "CreatorForge"
     assert "claude" in data.get("model", "").lower()
 
 
@@ -82,7 +82,7 @@ class TestGenerateBlockStream:
 class TestSendEmail:
     valid_payload = {
         "recipient_email": "TEST_recipient@example.com",
-        "subject": "TEST_BeastlyForge",
+        "subject": "TEST_CreatorForge",
         "html_content": "<p>TEST</p>",
     }
 
@@ -95,7 +95,7 @@ class TestSendEmail:
         assert r.status_code == 422
 
     def test_unverified_domain_returns_graceful_500(self):
-        """Sender domain hello@beastlyfacts.com is NOT verified in Resend.
+        """Sender domain hello@example.com is NOT verified in Resend.
         Expected: HTTP 500 with detail mentioning 'domain is not verified' (graceful)."""
         r = requests.post(f"{BASE_URL}/api/send-email", json=self.valid_payload, timeout=60)
         # Resend returns a domain-verification error; backend wraps as 500.

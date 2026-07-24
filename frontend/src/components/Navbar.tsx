@@ -4,6 +4,7 @@ import { Moon, Sun, Save, Download, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useTheme } from "@/hooks/useTheme";
 import { getCurrentDraftId } from "@/lib/storage";
+import { APP_NAME, APP_TAGLINE } from "@/lib/branding";
 import { toast } from "sonner";
 
 export default function Navbar() {
@@ -40,8 +41,8 @@ export default function Navbar() {
             <Sparkles className="w-5 h-5" />
           </div>
           <div className="leading-tight">
-            <div className="font-display text-xl font-semibold tracking-tight">BeastlyForge</div>
-            <div className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground -mt-0.5">For BeastlyFacts creators</div>
+            <div className="font-display text-xl font-semibold tracking-tight">{APP_NAME}</div>
+            <div className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground -mt-0.5">{APP_TAGLINE}</div>
           </div>
         </Link>
 

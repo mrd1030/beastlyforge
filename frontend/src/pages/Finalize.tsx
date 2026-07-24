@@ -17,7 +17,7 @@ import {
   mdToHtml, downloadFile, copyToClipboard, buildLlmPrompt
 } from "@/lib/exports";
 import { generateSocial, generateYoutube } from "@/lib/api";
-import { pushToSanity, loadSanityToken } from "@/lib/sanity";
+import { pushToSanity, loadSanityToken, isSanityConfigured, getSanityStudioUrl } from "@/lib/sanity";
 
 export default function Finalize() {
   const { id } = useParams();
@@ -100,7 +100,7 @@ export default function Finalize() {
     const t = toast.loading("Pushing to Sanity…");
     try {
       const docId = await pushToSanity(draft!, sanityToken);
-      const studioUrl = `https://beastlyfacts.sanity.studio/structure/post;${docId}`;
+      const studioUrl = getSanityStudioUrl(docId);
       toast.success("Pushed to Sanity as draft", {
         id: t,
         description: "Open Sanity Studio to review and publish.",
@@ -137,7 +137,7 @@ export default function Finalize() {
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           <Badge variant="outline" className="rounded-full">{draft.styleId}</Badge>
-          {sanityToken && (
+          {isSanityConfigured() && sanityToken && (
             <Button
               size="sm"
               variant="outline"
@@ -152,7 +152,7 @@ export default function Finalize() {
               Push to Sanity
             </Button>
           )}
-          {!sanityToken && (
+          {isSanityConfigured() && !sanityToken && (
             <Button size="sm" variant="ghost" asChild className="text-muted-foreground text-xs">
               <a href="/settings"><ExternalLink className="w-3 h-3 mr-1" /> Connect Sanity</a>
             </Button>

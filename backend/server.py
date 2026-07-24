@@ -11,16 +11,10 @@ import resend
 from pathlib import Path
 from pydantic import BaseModel, Field, EmailStr
 from typing import Optional, List, Dict, Any
-import uuid
 from datetime import datetime, timezone
 
 import anthropic as anthropic_sdk
 from tavily import TavilyClient
-try:
-    from emergentintegrations.llm.chat import LlmChat, UserMessage, TextDelta, StreamDone
-    _HAS_EMERGENT = True
-except ImportError:
-    _HAS_EMERGENT = False
 
 ROOT_DIR = Path(__file__).parent
 _env_path = ROOT_DIR.parent / '.env'
@@ -29,17 +23,12 @@ load_dotenv(_env_path, override=True)
 print(f"[env] Loading from: {_env_path} (exists={_env_path.exists()})")
 
 ANTHROPIC_API_KEY = os.environ.get('ANTHROPIC_API_KEY', '')
-EMERGENT_LLM_KEY = os.environ.get('EMERGENT_LLM_KEY', '')
 RESEND_API_KEY = os.environ.get('RESEND_API_KEY', '')
 SENDER_EMAIL = os.environ.get('SENDER_EMAIL', '')
 CLAUDE_MODEL = os.environ.get('CLAUDE_MODEL', 'claude-sonnet-4-6')
 TAVILY_API_KEY = os.environ.get('TAVILY_API_KEY', '')
-DEFAULT_MODEL = ("anthropic", "claude-sonnet-4-5-20250929")  # used only when falling back to emergentintegrations
 
-# Prefer direct Anthropic key; fall back to emergentintegrations proxy.
-USE_ANTHROPIC_DIRECT = bool(ANTHROPIC_API_KEY)
-
-app = FastAPI(title="BeastlyForge API")
+app = FastAPI(title="CreatorForge API")
 api_router = APIRouter(prefix="/api")
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -289,34 +278,20 @@ def _cached_system(system: str):
 
 
 async def llm_complete(system: str, user_text: str, max_tokens: int = 2000) -> str:
-    if USE_ANTHROPIC_DIRECT:
-        try:
-            aclient = anthropic_sdk.AsyncAnthropic(api_key=ANTHROPIC_API_KEY)
-            msg = await aclient.messages.create(
-                model=CLAUDE_MODEL,
-                max_tokens=max_tokens,
-                system=_cached_system(system),
-                messages=[{"role": "user", "content": user_text}],
-            )
-            return msg.content[0].text
-        except Exception as e:
-            logger.exception("Anthropic API call failed")
-            raise HTTPException(500, f"Anthropic error: {str(e)}")
-    # Fallback: emergentintegrations proxy
-    if not _HAS_EMERGENT or not EMERGENT_LLM_KEY:
+    if not ANTHROPIC_API_KEY:
         raise HTTPException(500, "No LLM key configured. Set ANTHROPIC_API_KEY in backend/.env.")
-    session_id = str(uuid.uuid4())
-    chat = LlmChat(
-        api_key=EMERGENT_LLM_KEY,
-        session_id=session_id,
-        system_message=system,
-    ).with_model(*DEFAULT_MODEL)
     try:
-        result = await chat.send_message(UserMessage(text=user_text))
-        return result if isinstance(result, str) else str(result)
+        aclient = anthropic_sdk.AsyncAnthropic(api_key=ANTHROPIC_API_KEY)
+        msg = await aclient.messages.create(
+            model=CLAUDE_MODEL,
+            max_tokens=max_tokens,
+            system=_cached_system(system),
+            messages=[{"role": "user", "content": user_text}],
+        )
+        return msg.content[0].text
     except Exception as e:
-        logger.exception("LLM call failed")
-        raise HTTPException(500, f"LLM error: {str(e)}")
+        logger.exception("Anthropic API call failed")
+        raise HTTPException(500, f"Anthropic error: {str(e)}")
 
 
 # ============ MODELS ============
@@ -416,7 +391,7 @@ class ProcessArticleIn(BaseModel):
 # ============ ROUTES ============
 @api_router.get("/")
 async def root():
-    return {"app": "BeastlyForge", "model": DEFAULT_MODEL[1]}
+    return {"app": "CreatorForge", "model": CLAUDE_MODEL}
 
 
 _DOMAIN_RE = re.compile(r'\b(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}\b')
@@ -516,7 +491,7 @@ async def generate_block_stream(body: GenerateBlockIn):
                 text = await llm_complete(system, user, max_tokens=1500)
                 text = _filter_references_block(text.strip(), body.brief.factsToUse)
                 yield f"data: {json.dumps({'delta': text})}\n\n"
-            elif USE_ANTHROPIC_DIRECT:
+            elif ANTHROPIC_API_KEY:
                 aclient = anthropic_sdk.AsyncAnthropic(api_key=ANTHROPIC_API_KEY)
                 async with aclient.messages.stream(
                     model=CLAUDE_MODEL,
@@ -527,19 +502,8 @@ async def generate_block_stream(body: GenerateBlockIn):
                     async for text in stream.text_stream:
                         yield f"data: {json.dumps({'delta': text})}\n\n"
             else:
-                if not _HAS_EMERGENT or not EMERGENT_LLM_KEY:
-                    yield f"data: {json.dumps({'error': 'No LLM key configured. Set ANTHROPIC_API_KEY in backend/.env.'})}\n\n"
-                    return
-                chat = LlmChat(
-                    api_key=EMERGENT_LLM_KEY,
-                    session_id=str(uuid.uuid4()),
-                    system_message=system,
-                ).with_model(*DEFAULT_MODEL)
-                async for ev in chat.stream_message(UserMessage(text=user)):
-                    if isinstance(ev, TextDelta):
-                        yield f"data: {json.dumps({'delta': ev.content})}\n\n"
-                    elif isinstance(ev, StreamDone):
-                        break
+                yield f"data: {json.dumps({'error': 'No LLM key configured. Set ANTHROPIC_API_KEY in backend/.env.'})}\n\n"
+                return
         except Exception as e:
             logger.exception("Stream failed")
             yield f"data: {json.dumps({'error': str(e)})}\n\n"
@@ -988,7 +952,7 @@ async def send_email(request: EmailRequest):
     params = {
         "from": SENDER_EMAIL,
         "to": [request.recipient_email],
-        "subject": request.subject or "Your BeastlyForge newsletter",
+        "subject": request.subject or "Your CreatorForge newsletter",
         "html": request.html_content,
     }
     try:

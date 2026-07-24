@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { toast } from "sonner";
 import { Plus, Pencil, Trash2, Sparkles, KeyRound, Wand2, Save, DatabaseZap } from "lucide-react";
-import { loadSanityToken, saveSanityToken } from "@/lib/sanity";
+import { loadSanityToken, saveSanityToken, isSanityConfigured, SANITY_PROJECT_ID, SANITY_DATASET } from "@/lib/sanity";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -184,12 +184,13 @@ export default function Settings() {
               </div>
               <div>
                 <div className="font-display text-lg flex items-center gap-2">
-                  Using the built-in Emergent key
+                  Configured via environment variable
                   <Badge variant="outline" className="text-[10px]">Active</Badge>
                 </div>
                 <p className="text-sm text-muted-foreground mt-1 max-w-2xl">
-                  All AI runs on Claude Sonnet 4.5 via the shared Emergent key — no setup needed. Bringing your own
-                  Anthropic or xAI (Grok) key is coming soon; this is where you'll add and manage them.
+                  AI generation runs on Claude, using the <span className="font-mono text-xs">ANTHROPIC_API_KEY</span> set
+                  in the backend's environment — there's nothing to configure here yet. Per-user API keys (bring your own
+                  Anthropic or xAI/Grok key) are coming soon; this is where you'll add and manage them.
                 </p>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-4 max-w-2xl opacity-60 pointer-events-none">
                   <div>
@@ -217,46 +218,56 @@ export default function Settings() {
                 <DatabaseZap className="w-5 h-5" />
               </div>
               <div className="flex-1">
-                <div className="font-display text-lg mb-1">Push directly to Beastly Facts</div>
-                <p className="text-sm text-muted-foreground mb-4">
-                  Enter a Sanity API token with write access and you can push any article straight to your Content Lake as a draft — no copy-paste needed.
-                  Generate a token at <span className="font-mono text-xs">sanity.io/manage → project 7nqbs1gk → API → Tokens → Add API token (Editor role)</span>.
-                </p>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4 text-sm">
-                  <div className="rounded-lg bg-muted/50 px-3 py-2">
-                    <div className="text-xs text-muted-foreground mb-0.5">Project ID</div>
-                    <div className="font-mono font-medium">7nqbs1gk</div>
-                  </div>
-                  <div className="rounded-lg bg-muted/50 px-3 py-2">
-                    <div className="text-xs text-muted-foreground mb-0.5">Dataset</div>
-                    <div className="font-mono font-medium">production</div>
-                  </div>
-                  <div className="rounded-lg bg-muted/50 px-3 py-2">
-                    <div className="text-xs text-muted-foreground mb-0.5">Document type</div>
-                    <div className="font-mono font-medium">post</div>
-                  </div>
-                </div>
-                <div className="flex gap-2 max-w-xl">
-                  <Input
-                    type="password"
-                    value={sanityToken}
-                    onChange={e => setSanityToken(e.target.value)}
-                    placeholder="sk… (Sanity API write token)"
-                    data-testid="sanity-token-input"
-                  />
-                  <Button
-                    onClick={() => {
-                      saveSanityToken(sanityToken);
-                      toast.success(sanityToken ? "Sanity token saved" : "Token cleared");
-                    }}
-                    variant="outline"
-                    data-testid="sanity-token-save-btn"
-                  >
-                    <Save className="w-4 h-4 mr-1.5" /> Save
-                  </Button>
-                </div>
-                {sanityToken && (
-                  <p className="text-xs text-emerald-600 dark:text-emerald-400 mt-2">Token saved. Push to Sanity will appear on the Finalize page.</p>
+                <div className="font-display text-lg mb-1">Push directly to Sanity</div>
+                {!isSanityConfigured() && (
+                  <p className="text-sm text-muted-foreground mb-4">
+                    Sanity push isn't configured for this deployment. Set <span className="font-mono text-xs">VITE_SANITY_PROJECT_ID</span> (and
+                    optionally <span className="font-mono text-xs">VITE_SANITY_DATASET</span>) in the frontend environment to enable it.
+                  </p>
+                )}
+                {isSanityConfigured() && (
+                  <>
+                    <p className="text-sm text-muted-foreground mb-4">
+                      Enter a Sanity API token with write access and you can push any article straight to your Content Lake as a draft — no copy-paste needed.
+                      Generate a token at <span className="font-mono text-xs">sanity.io/manage → project {SANITY_PROJECT_ID} → API → Tokens → Add API token (Editor role)</span>.
+                    </p>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4 text-sm">
+                      <div className="rounded-lg bg-muted/50 px-3 py-2">
+                        <div className="text-xs text-muted-foreground mb-0.5">Project ID</div>
+                        <div className="font-mono font-medium">{SANITY_PROJECT_ID}</div>
+                      </div>
+                      <div className="rounded-lg bg-muted/50 px-3 py-2">
+                        <div className="text-xs text-muted-foreground mb-0.5">Dataset</div>
+                        <div className="font-mono font-medium">{SANITY_DATASET}</div>
+                      </div>
+                      <div className="rounded-lg bg-muted/50 px-3 py-2">
+                        <div className="text-xs text-muted-foreground mb-0.5">Document type</div>
+                        <div className="font-mono font-medium">post</div>
+                      </div>
+                    </div>
+                    <div className="flex gap-2 max-w-xl">
+                      <Input
+                        type="password"
+                        value={sanityToken}
+                        onChange={e => setSanityToken(e.target.value)}
+                        placeholder="sk… (Sanity API write token)"
+                        data-testid="sanity-token-input"
+                      />
+                      <Button
+                        onClick={() => {
+                          saveSanityToken(sanityToken);
+                          toast.success(sanityToken ? "Sanity token saved" : "Token cleared");
+                        }}
+                        variant="outline"
+                        data-testid="sanity-token-save-btn"
+                      >
+                        <Save className="w-4 h-4 mr-1.5" /> Save
+                      </Button>
+                    </div>
+                    {sanityToken && (
+                      <p className="text-xs text-emerald-600 dark:text-emerald-400 mt-2">Token saved. Push to Sanity will appear on the Finalize page.</p>
+                    )}
+                  </>
                 )}
               </div>
             </div>

@@ -1,4 +1,4 @@
-"""BeastlyForge backend API tests against deployed REACT_APP_BACKEND_URL."""
+"""CreatorForge backend API tests against deployed REACT_APP_BACKEND_URL."""
 import os
 import pytest
 import requests
@@ -32,8 +32,8 @@ def test_root(s):
     r = s.get(f"{BASE_URL}/api/", timeout=30)
     assert r.status_code == 200
     j = r.json()
-    assert j["app"] == "BeastlyForge"
-    assert j["model"] == "claude-sonnet-4-5-20250929"
+    assert j["app"] == "CreatorForge"
+    assert "claude" in j["model"].lower()
 
 
 # ---- block generation ----

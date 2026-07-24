@@ -1,8 +1,29 @@
 import type { Draft } from "@/types";
 
-const PROJECT_ID = "7nqbs1gk";
-const DATASET = "production";
+// Which Sanity project/dataset this deployment pushes to — set per-deployment via
+// env vars rather than hardcoded, so different buyers of this template can point it
+// at their own Sanity project without editing source. Push-to-Sanity is disabled
+// entirely (see isSanityConfigured) when VITE_SANITY_PROJECT_ID isn't set.
+export const SANITY_PROJECT_ID = (import.meta.env.VITE_SANITY_PROJECT_ID as string) || "";
+export const SANITY_DATASET = (import.meta.env.VITE_SANITY_DATASET as string) || "production";
 const API_VERSION = "2021-06-07";
+
+export function isSanityConfigured(): boolean {
+  return Boolean(SANITY_PROJECT_ID);
+}
+
+// Sanity Studio URLs are of the form https://<project-id>.sanity.studio/... —
+// derive it from the same project ID used for the push, so there's one source of
+// truth for which Sanity project this app talks to.
+export function getSanityStudioUrl(docId: string): string {
+  return `https://${SANITY_PROJECT_ID}.sanity.studio/structure/post;${docId}`;
+}
+
+// Generic fallback when a source/CTA needs a URL but none was provided — uses this
+// deployment's own origin rather than assuming any particular site's domain.
+function fallbackSiteUrl(): string {
+  return typeof window !== "undefined" && window.location?.origin ? window.location.origin : "";
+}
 
 // ── helpers ────────────────────────────────────────────────────────────────────
 
@@ -146,7 +167,7 @@ function parseSourcesContent(content: string): any {
       _key: uid(),
       title: dashSplit[0]?.replace(/\[([^\]]+)\]\([^)]+\)/, "$1").trim() || text,
       description: dashSplit.slice(1).join(" ").trim() || "",
-      url: urlMatch ? urlMatch[0] : "https://beastlyfacts.com",
+      url: urlMatch ? urlMatch[0] : fallbackSiteUrl(),
       sourceType: "other",
     });
   }
@@ -157,8 +178,8 @@ function parseSourcesContent(content: string): any {
     heading: "Sources & Further Reading",
     sources,
     showMoreSection: true,
-    moreText: "Explore more wild animal facts on BeastlyFacts",
-    moreUrl: "https://beastlyfacts.com/blog",
+    moreText: "Explore more articles",
+    moreUrl: fallbackSiteUrl(),
   };
 }
 
@@ -214,10 +235,13 @@ export function draftToSanityDoc(draft: Draft): any {
 // ── API push ───────────────────────────────────────────────────────────────────
 
 export async function pushToSanity(draft: Draft, token: string): Promise<string> {
+  if (!isSanityConfigured()) {
+    throw new Error("Sanity isn't configured for this deployment (set VITE_SANITY_PROJECT_ID).");
+  }
   const doc = draftToSanityDoc(draft);
 
   const res = await fetch(
-    `https://${PROJECT_ID}.api.sanity.io/v${API_VERSION}/data/mutate/${DATASET}`,
+    `https://${SANITY_PROJECT_ID}.api.sanity.io/v${API_VERSION}/data/mutate/${SANITY_DATASET}`,
     {
       method: "POST",
       headers: {

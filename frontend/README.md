@@ -1,4 +1,4 @@
-# BeastlyForge frontend
+# CreatorForge frontend
 
 Vite + React + TypeScript SPA. For the full project overview, environment variables, and how to
 run this alongside the backend, see the [root README](../README.md).

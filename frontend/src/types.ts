@@ -1,4 +1,4 @@
-// Core BeastlyForge types
+// Core CreatorForge types
 // Built-in style ids plus any custom style id (e.g. "cstyle_xxx").
 export type StyleId = string;
 

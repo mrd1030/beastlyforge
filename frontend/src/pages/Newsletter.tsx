@@ -14,6 +14,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { loadNewsletter, saveNewsletter, loadDrafts, uid } from "@/lib/storage";
 import { generateImagePrompt, sendEmail } from "@/lib/api";
+import { APP_NAME } from "@/lib/branding";
 import {
   standaloneNewsletterHtml, standaloneNewsletterMarkdown, newsletterPlainText,
   copyToClipboard, downloadFile,
@@ -118,7 +119,7 @@ export default function Newsletter() {
     setSending(true);
     const t = toast.loading(`Sending a test to ${email}…`);
     try {
-      const r = await sendEmail({ recipient_email: email, subject: nl.title || "Your BeastlyForge newsletter", html_content: standaloneNewsletterHtml(nl) });
+      const r = await sendEmail({ recipient_email: email, subject: nl.title || `Your ${APP_NAME} newsletter`, html_content: standaloneNewsletterHtml(nl) });
       toast.success("Test email sent", { id: t, description: r?.message });
     } catch (e: any) {
       const detail = e?.response?.data?.detail || e?.message || "Failed to send";
@@ -171,7 +172,7 @@ export default function Newsletter() {
           <Card><CardContent className="p-4 space-y-3">
             <div>
               <Label>Newsletter title / subject</Label>
-              <Input value={nl.title} onChange={e => update({ title: e.target.value })} placeholder="This week at BeastlyFacts" data-testid="newsletter-title-input" />
+              <Input value={nl.title} onChange={e => update({ title: e.target.value })} placeholder="This week's newsletter" data-testid="newsletter-title-input" />
             </div>
             <div>
               <Label>Intro</Label>
