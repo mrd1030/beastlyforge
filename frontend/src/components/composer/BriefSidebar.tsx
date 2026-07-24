@@ -21,8 +21,6 @@ interface Props {
   leftOpen: boolean;
   setLeftOpen: (v: boolean) => void;
   onStyleChange: (sid: StyleId) => void;
-  niche: string;
-  setNiche: (v: string) => void;
 }
 
 // Stable, module-level collapsible section (must NOT be defined inside the
@@ -44,7 +42,8 @@ function Sec({ open, onToggle, k, title, children }: {
   );
 }
 
-export default function BriefSidebar({ draft, setDraft, leftOpen, setLeftOpen, onStyleChange, niche, setNiche }: Props) {
+export default function BriefSidebar({ draft, setDraft, leftOpen, setLeftOpen, onStyleChange }: Props) {
+  const niche = draft.brief.niche || "Pet Care";
   const [customCats, setCustomCats] = useState<string[]>(loadCustomCategories());
   const [newCat, setNewCat] = useState("");
   const [newTag, setNewTag] = useState("");
@@ -60,7 +59,13 @@ export default function BriefSidebar({ draft, setDraft, leftOpen, setLeftOpen, o
   const allCats = [...new Set([...nicheCategories, ...customCats])];
 
   const update = (patch: Partial<Draft>) => setDraft(prev => prev ? { ...prev, ...patch } : prev);
-  const updateBrief = (patch: Partial<Draft["brief"]>) => setDraft(prev => prev ? { ...prev, brief: { ...prev.brief, ...patch } } : prev);
+  // Accepts either a plain patch or an updater keyed off the latest brief — the
+  // updater form is required for anything computed from the current brief (add/
+  // remove from an array), since draft.brief here is a closed-over prop and can
+  // be stale across back-to-back calls (e.g. clicking several category chips in
+  // quick succession, before a re-render commits the first click's update).
+  const updateBrief = (patch: Partial<Draft["brief"]> | ((prev: Draft["brief"]) => Partial<Draft["brief"]>)) =>
+    setDraft(prev => prev ? { ...prev, brief: { ...prev.brief, ...(typeof patch === "function" ? patch(prev.brief) : patch) } } : prev);
   const updateAffiliate = (patch: Partial<Draft["affiliate"]>) => setDraft(prev => prev ? { ...prev, affiliate: { ...prev.affiliate, ...patch } } : prev);
   const updateBlock = (id: string, patch: Partial<Block>) => {
     setDraft(prev => {
@@ -105,8 +110,9 @@ export default function BriefSidebar({ draft, setDraft, leftOpen, setLeftOpen, o
   const updateHeader = (patch: Partial<Draft["headerImage"]>) => setDraft(prev => prev ? { ...prev, headerImage: { ...prev.headerImage, ...patch } } : prev);
 
   const toggleCategory = (c: string) => {
-    const has = draft.brief.categories.includes(c);
-    updateBrief({ categories: has ? draft.brief.categories.filter(x => x !== c) : [...draft.brief.categories, c] });
+    updateBrief(prev => ({
+      categories: prev.categories.includes(c) ? prev.categories.filter(x => x !== c) : [...prev.categories, c],
+    }));
   };
   const addCustomCat = () => {
     const v = newCat.trim();
@@ -119,11 +125,10 @@ export default function BriefSidebar({ draft, setDraft, leftOpen, setLeftOpen, o
   const addTag = () => {
     const v = newTag.trim().toLowerCase().replace(/\s+/g, "-");
     if (!v) return;
-    if (draft.brief.tags.includes(v)) return;
-    updateBrief({ tags: [...draft.brief.tags, v] });
+    updateBrief(prev => prev.tags.includes(v) ? {} : { tags: [...prev.tags, v] });
     setNewTag("");
   };
-  const removeTag = (t: string) => updateBrief({ tags: draft.brief.tags.filter(x => x !== t) });
+  const removeTag = (t: string) => updateBrief(prev => ({ tags: prev.tags.filter(x => x !== t) }));
 
   const articleContent = () => draft.blocks.map(b => b.content || "").join("\n\n");
   const articleTitle = () => draft.blocks.find(b => b.type === "title")?.content || draft.brief.topic;
@@ -268,7 +273,7 @@ export default function BriefSidebar({ draft, setDraft, leftOpen, setLeftOpen, o
         {/* Niche picker — always visible at top */}
         <div className="px-4 py-3 border-b border-border/60">
           <Label className="text-xs uppercase tracking-[0.18em] text-muted-foreground font-medium mb-2 block">Topic Niche</Label>
-          <Select value={niche} onValueChange={v => { setNiche(v); updateBrief({ categories: [] }); }}>
+          <Select value={niche} onValueChange={v => updateBrief({ niche: v, categories: [] })}>
             <SelectTrigger data-testid="niche-select" className="w-full">
               <SelectValue />
             </SelectTrigger>
@@ -396,7 +401,7 @@ export default function BriefSidebar({ draft, setDraft, leftOpen, setLeftOpen, o
               : <><Sparkles className="w-3.5 h-3.5 mr-1.5" /> Generate with AI</>}
           </Button>
           <Textarea rows={6} value={draft.brief.factsToUse} onChange={e => updateBrief({ factsToUse: e.target.value })}
-            placeholder={"- Bearded dragons need UVB 10–12 hrs/day\n- Basking temp 95–110°F\n- My vet recommended calcium dusting 3x/week"}
+            placeholder={"- A specific claim or stat, plainly stated (Source: domain.com)\n- Another fact worth citing (Source: domain.com)"}
             data-testid="brief-facts-input" />
         </Sec>
 

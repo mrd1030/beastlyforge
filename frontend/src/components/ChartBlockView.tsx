@@ -8,6 +8,11 @@ export function ChartBlockView({ data }: { data: ChartData }) {
     <figure className="bf-chart" data-testid="chart-block-view">
       {data.description && <figcaption className="bf-chart-caption">{data.description}</figcaption>}
       <div style={{ width: "100%", height: 280 }}>
+        {/* isAnimationActive=false on the Bar below: ResponsiveContainer can report
+            an invalid (-1x-1) size on first mount before its ResizeObserver settles.
+            With animation on, recharts bakes bar geometry off that first bad
+            measurement and never recomputes it once the container resizes correctly
+            — the axes and grid redraw fine, but the bars stay permanently empty. */}
         <ResponsiveContainer>
           <BarChart data={rows} margin={{ top: 20, right: 12, left: 0, bottom: 4 }}>
             <CartesianGrid vertical={false} stroke="hsl(var(--border))" />
@@ -34,7 +39,7 @@ export function ChartBlockView({ data }: { data: ChartData }) {
                 fontSize: 13,
               }}
             />
-            <Bar dataKey="value" fill="hsl(var(--chart-1))" radius={[4, 4, 0, 0]} maxBarSize={24}>
+            <Bar dataKey="value" fill="hsl(var(--chart-1))" radius={[4, 4, 0, 0]} maxBarSize={24} isAnimationActive={false}>
               <LabelList dataKey="value" position="top" fill="hsl(var(--foreground))" fontSize={12} />
             </Bar>
           </BarChart>

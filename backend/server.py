@@ -326,6 +326,7 @@ class BriefIn(BaseModel):
     factsToUse: str = ""
     categories: List[str] = []
     tags: List[str] = []
+    niche: str = ""
 
 
 class GenerateBlockIn(BaseModel):

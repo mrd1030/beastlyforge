@@ -62,6 +62,9 @@ export interface Brief {
   tags: string[];
   slug: string;
   canonicalUrl: string;
+  // Content niche (Pet Care, Finance, Travel, ...) — drives the category list and
+  // is sent to the backend so generation prompts know what they're writing for.
+  niche: string;
 }
 
 export interface HeaderImage {

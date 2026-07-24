@@ -21,6 +21,7 @@ export function emptyBrief(): Brief {
     keyPoints: "", angle: "", extra: "",
     focusKeyword: "", metaDescription: "", factsToUse: "",
     categories: [], tags: [], slug: "", canonicalUrl: "",
+    niche: "Pet Care",
   };
 }
 
@@ -45,6 +46,7 @@ export function newDraft(styleId?: StyleId): Draft {
   const settings = loadSettings();
   const brief = emptyBrief();
   brief.categories = [...settings.defaultCategories];
+  brief.niche = settings.defaultNiche || "Pet Care";
   const aff = emptyAffiliate();
   aff.enabled = settings.defaultAffiliateEnabled;
   return {
