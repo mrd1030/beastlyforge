@@ -195,7 +195,7 @@ const updateBlock = (id: string, patch: Partial<Block>) => {
   };
 
   const onHumanizeBlock = async (b: Block) => {
-    if (!b.content) { toast.message("Nothing to humanize yet"); return; }
+    if (!b.content) { toast.message("Nothing to polish yet"); return; }
     setBlockBusy(b.id);
     const t = toast.loading("Polishing voice…");
     try {
@@ -215,7 +215,7 @@ const updateBlock = (id: string, patch: Partial<Block>) => {
         const r = await humanize(b.content, draft.styleId, getStyleInstructions(draft.styleId));
         updateBlock(b.id, { content: r.text });
       }
-      snapshotVersion("Humanizer polish");
+      snapshotVersion("Polish pass");
       toast.success("Polished", { id: t, description: "Sounds more like you now." });
     } catch (e: any) { toast.error("Failed", { id: t, description: e?.message }); }
     finally { setBusy(false); }
@@ -276,8 +276,8 @@ const updateBlock = (id: string, patch: Partial<Block>) => {
               </Button>
               <Button size="sm" variant="ghost" className="h-7 px-2 text-xs"
                 disabled={!!blockBusy} onClick={() => onHumanizeBlock(b)}
-                data-testid={`humanize-block-${b.id}-btn`}>
-                <Wand2 className="w-3.5 h-3.5 mr-1" /> Humanize
+                data-testid={`polish-block-${b.id}-btn`}>
+                <Wand2 className="w-3.5 h-3.5 mr-1" /> Polish
               </Button>
             </div>
           </div>
